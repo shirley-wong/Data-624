@@ -1,0 +1,310 @@
+---
+title: "Data 624 HW1: Time Series "
+author: "Sin Ying Wong"
+date: "02/14/2021"
+output:
+  rmdformats::readthedown:
+    code_folding: show
+    df_print: paged
+    highlight: tango
+    number_sections: yes
+    smooth_scroll: yes
+    theme: united
+    toc_collapsed: yes
+    toc_depth: 5
+    toc_float: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_collapsed: yes
+    toc_float: yes
+  html_notebook: default
+  pdf_document:
+    extra_dependencies:
+    - geometry
+    - multicol
+    - multirow
+  word_document:
+    toc: yes
+    toc_depth: '5'
+theme: lumen
+number_sections: yes
+toc_depth: 3
+---
+
+```{r library, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(fpp2)
+library(rio)
+```
+
+# HW1: Time Series
+
+Please submit exercises 2.1, 2.2, 2.3 and 2.6 from the Hyndman online Forecasting book.  Please submit both your Rpubs link as well as attach the .rmd file with your code.
+
+## Ex. 2.1
+Use the help function to explore what the series `gold`, `woolyrnq` and `gas` represent.
+
+(a) Use `autoplot()` to plot each of these in separate plots.
+
+(b) What is the frequency of each series? Hint: apply the `frequency()` function.
+
+(c) Use `which.max()` to spot the outlier in the `gold` series. Which observation was it?
+
+
+### Part a
+
+```{r}
+autoplot(gold) + # Daily morning gold prices in US dollars. 1 January 1985 – 31 March 1989.
+  ggtitle("Daily morning gold prices in US dollars (Jan 1985 to Mar 1989)") +
+  xlab("Days") + 
+  ylab("US Dollar($)")
+autoplot(woolyrnq) + # Quarterly production of woollen yarn in Australia: tonnes. Mar 1965 – Sep 1994.
+  ggtitle("Quarterly production of woollen yarn in Australia (Mar 1965 – Sep 1994)") +
+  xlab("Year") + 
+  ylab("Tonnes")
+autoplot(gas) + # Australian monthly gas production: 1956–1995.
+  ggtitle("Australian monthly gas production (1956–1995)") +
+  xlab("Year") + 
+  ylab("Gas Volume")
+```
+
+
+### Part b
+
+```{r}
+frequency(gold)
+frequency(woolyrnq)
+frequency(gas)
+```
+
+The frequency of `gold` is 1.
+
+The frequency of `woolyrnq` is 4.
+
+The frequency of `gas` is 12.
+ 
+
+### Part c
+
+```{r}
+which.max(gold)
+
+```
+
+The outlier in the `gold` series found by the `which.max()` function is 770.
+
+
+## Ex. 2.2
+Download the file `tute1.csv` from the book website, open it in Excel (or some other spreadsheet application), and review its contents. You should find four columns of information. Columns B through D each contain a quarterly series, labelled Sales, AdBudget and GDP. Sales contains the quarterly sales for a small company over the period 1981-2005. AdBudget is the advertising budget and GDP is the gross domestic product. All series have been adjusted for inflation.
+
+### Part a
+Read the data into R.
+
+```{r}
+tute1 <- read.csv("https://raw.githubusercontent.com/shirley-wong/Data-624/main/HW1/tute1.csv", header=TRUE)
+head(tute1)
+```
+
+### Part b
+Convert the data to time series
+
+```{r}
+tute1_ts <- ts(tute1[,-1], start=1981, frequency=4) #removing first column
+head(tute1_ts)
+```
+
+
+### Part c
+Construct time series plots of each of the three series
+
+```{r}
+autoplot(tute1_ts, facets=TRUE, ylab = "Tute1")
+```
+
+Check what happens when you don’t include `facets=TRUE`:
+
+- The three graphs combined into one.
+```{r}
+autoplot(tute1_ts, ylab = "Tute1")
+```
+
+
+## Ex. 2.3
+Download some monthly Australian retail data from the book website. These represent retail sales in various categories for different Australian states, and are stored in a MS-Excel file.
+
+### Part a
+
+Read the data into R.
+
+```{r}
+retail <- import("https://raw.githubusercontent.com/shirley-wong/Data-624/main/HW1/retail.xlsx",
+                             skip=1) #this excel sheet has two header rows
+head(retail)
+
+#summary(retail)
+```
+
+
+### Part b
+
+Select one of the time series as follows (but replace the column name with your own chosen column):
+
+```{r}
+myts <- ts(retail[,"A3349746K"], frequency=12, start=c(1982,4))
+```
+
+### Part c
+Explore your chosen retail time series using the following functions: `autoplot()`, `ggseasonplot()`, `ggsubseriesplot()`, `gglagplot()`, `ggAcf()`. 
+
+```{r}
+#autoplot()
+autoplot(myts) +
+  ggtitle("Turnover-Western Australia-Total(Industry) Time Series") +
+  xlab("Time") + 
+  ylab("Sales")
+
+#ggseasonplot()
+ggseasonplot(myts, polar=TRUE) +
+  ggtitle("Turnover-Western Australia-Total(Industry) Time Series") +
+  ylab("Sales")
+
+#ggsubseriesplot()
+ggsubseriesplot(myts) +
+  ggtitle("Turnover-Western Australia-Total(Industry) Time Series") +
+  ylab("Sales")
+
+#gglagplot()
+gglagplot(myts) +
+  ggtitle("Turnover-Western Australia-Total(Industry) Time Series") +
+  ylab("Sales")
+
+#ggAcf()
+ggAcf(myts)
+```
+
+Can you spot any seasonality, cyclicity and trend? What do you learn about the series?
+
+Answer: 
+
+The `gglagplot` shows the seasonality as the sales in December is much different.
+
+The `ggsubseriesplot` shows the mean sales with the blue line. It also shows a higher sales in December.
+
+The `ggseasonplot` also has a peak at December every year.
+
+The spending trend spotted from the graphs is December.
+
+
+## Ex. 2.6
+
+Use the following graphics functions: `autoplot()`, `ggseasonplot()`, `ggsubseriesplot()`, `gglagplot()`, `ggAcf()` and explore features from the following time series: `hsales` , `usdeaths` , `bricksq` , `sunspotarea` , `gasoline`.
+
+Can you spot any seasonality, cyclicity and trend?  What do you learn about the series?
+
+### hsales
+```{r}
+#hsales
+autoplot(hsales)
+ggseasonplot(hsales, polar=TRUE)
+ggsubseriesplot(hsales)
+gglagplot(hsales)
+ggAcf(hsales)
+```
+
+Q: Can you spot any seasonality, cyclicity and trend?  What do you learn about the series?
+
+Answer:
+
+The home sales tends to be higher in March and then gradually decrease. 
+
+Winter (Nov to Feb) has a low sales trend.
+
+
+### usdeaths
+```{r}
+#usdeaths
+autoplot(usdeaths)
+ggseasonplot(usdeaths, polar=TRUE)
+ggsubseriesplot(usdeaths)
+gglagplot(usdeaths)
+ggAcf(usdeaths)
+```
+
+Q: Can you spot any seasonality, cyclicity and trend?  What do you learn about the series?
+
+Answer:
+
+It tends to have more deaths in the summer time, and it usually peaks in July. 
+
+It may be related to the summer vacation time from schools that teenage suicide may bring up the number of deaths during July.
+
+
+### bricksq
+```{r}
+#bricksq
+autoplot(bricksq)
+ggseasonplot(bricksq, polar=TRUE)
+ggsubseriesplot(bricksq)
+gglagplot(bricksq)
+ggAcf(bricksq)
+```
+
+
+Q: Can you spot any seasonality, cyclicity and trend?  What do you learn about the series?
+
+Answer:
+
+There is an increasing trend from 1950 to mid-1970s, then it started to have a cylicity pattern from mid-1970s and afterwards. 
+
+
+### sunspotarea
+```{r}
+#sunspotarea
+autoplot(sunspotarea)
+#ggseasonplot(sunspotarea, polar=TRUE)  --- data is not seasonal
+#ggsubseriesplot(sunspotarea)           --- data is not seasonal
+gglagplot(sunspotarea)
+ggAcf(sunspotarea)
+```
+
+Q: Can you spot any seasonality, cyclicity and trend?  What do you learn about the series?
+
+Answer:
+
+The data is not seasonal.  
+
+The data shows cyclicity with peak at around 1950s.
+
+
+### gasoline
+```{r}
+#gasoline
+autoplot(gasoline)
+ggseasonplot(gasoline, polar=TRUE)
+#ggsubseriesplot(gasoline)          --- not enough observations
+gglagplot(gasoline)
+ggAcf(gasoline)
+```
+
+Q: Can you spot any seasonality, cyclicity and trend?  What do you learn about the series?
+
+Answer:
+
+It shows an increasing trend from 1990 to 2005. 
+
+Seasonality is shown from the `ggseasonplot`. It shows peaks from week 28 to Week 38, about June to September, which is during Summer, and goes down during Winter.
+
+
+
+
+
+
+
+
+
+
+
+
+
