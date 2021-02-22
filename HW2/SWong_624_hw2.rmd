@@ -1,0 +1,314 @@
+---
+title: "Data 624 HW2: Forecaster's Toolbox"
+author: "Sin Ying Wong"
+date: "02/21/2021"
+output:
+  rmdformats::readthedown:
+    code_folding: show
+    df_print: paged
+    highlight: tango
+    number_sections: yes
+    smooth_scroll: yes
+    theme: united
+    toc_collapsed: yes
+    toc_depth: 5
+    toc_float: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_collapsed: yes
+    toc_float: yes
+  html_notebook: default
+  pdf_document:
+    extra_dependencies:
+    - geometry
+    - multicol
+    - multirow
+  word_document:
+    toc: yes
+    toc_depth: '5'
+theme: lumen
+number_sections: yes
+toc_depth: 3
+---
+
+```{r library, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(fpp2)
+library(rio)
+library(gridExtra)
+```
+
+# HW2: Forecaster's Toolbox
+
+Please submit exercises 3.1, 3.2, 3.3 and 3.8 from the online Hyndman book.  Please include your Rpubs link along with your .rmd file.
+
+## Ex. 3.1
+**For the following series, find an appropriate Box-Cox transformation in order to stabilise the variance: `usnetelec`, `usgdp`, `mcopper`, and `enplanements`.**
+
+
+### usnetelec
+
+Answer:
+
+`usnetelec`: Annual US net electricity generation (billion kwh) for 1949-2003
+
+- The BoxCox plot of `usnetelec` with $\lambda = 0.5167714$ made no huge difference here compared with the original plot.
+
+```{r, message=FALSE, warning=FALSE}
+lambda1 <- BoxCox.lambda(usnetelec)
+lambda1
+dframe <- cbind(elec_Original = usnetelec,
+                elec_BoxCox = BoxCox(usnetelec, lambda1))
+autoplot(dframe, facet=TRUE) +
+  xlab("Year") + ylab("Electricity (billion kwh)") +
+  ggtitle("Annual US net electricity generation (billion kwh) for 1949-2003")
+```
+
+
+### usgdp
+
+Answer:
+
+`usgdp`: Quarterly US GDP. 1947:1 - 2006.1.
+
+- The BoxCox plot of `usgdp` with $\lambda = 0.366352$ produced a slightly smoother curve over time compared with the original plot. 
+
+```{r, message=FALSE, warning=FALSE}
+lambda2 <- BoxCox.lambda(usgdp)
+lambda2
+dframe <- cbind(gdp_Original = usgdp,
+                gdp_BoxCox = BoxCox(usgdp, lambda2))
+autoplot(dframe, facet=TRUE) +
+  xlab("Year") + ylab("GDP") +
+  ggtitle("Quarterly US GDP. 1947:1 - 2006.1")
+```
+
+### mcopper
+
+Answer:
+
+`mcopper`: Monthly copper prices.
+
+- The BoxCox plot of `mcopper` with $\lambda = 0.1919047$ is similar to the original plot. The original plot has dramatic ups and downs which the BoxCox plot did not have siginificant change by looking at the shape of the graph.
+
+```{r, message=FALSE, warning=FALSE}
+lambda3 <- BoxCox.lambda(mcopper)
+lambda3
+dframe <- cbind(copper_Original = mcopper,
+                copper_BoxCox = BoxCox(mcopper, lambda3))
+autoplot(dframe, facet=TRUE) +
+  xlab("Year") + ylab("Copper Prices") +
+  ggtitle("Monthly Copper Prices")
+```
+
+
+
+
+### enplanements
+
+Answer:
+
+`enplanements`: Domestic Revenue Enplanements (millions): 1996-2000.
+
+- The BoxCox plot of `enplanements` with $\lambda = -0.2269461$ reduced the variability over time and improved the seasonality compared with the original plot.
+
+```{r, message=FALSE, warning=FALSE}
+lambda4 <- BoxCox.lambda(enplanements)
+lambda4
+dframe <- cbind(rev_Original = enplanements,
+                rev_BoxCox = BoxCox(enplanements, lambda4))
+autoplot(dframe, facet=TRUE) +
+  xlab("Year") + ylab("Domestic Revenue Enplanements (millions)") +
+  ggtitle("Domestic Revenue Enplanements (millions): 1996-2000")
+```
+
+
+
+## Ex. 3.2
+**Why is a Box-Cox transformation unhelpful for the `cangas` data?**
+
+### cangas
+
+Answer:
+
+`cangas`: Monthly Canadian gas production, billions of cubic metres, January 1960 - February 2005.
+
+- The BoxCox transformation of `cangas` with $\lambda = 0.5767759$ is not helpful for the `cangas` data. The BoxCox plot still has high variability in the middle part of the graph while the front and end parts varies little.  The BoxCox transformation did not perform well in producing uniform seasonality.
+
+```{r, message=FALSE, warning=FALSE}
+lambda5 <- BoxCox.lambda(cangas)
+lambda5
+dframe <- cbind(gas_Original = cangas,
+                gas_BoxCox = BoxCox(cangas, lambda5))
+autoplot(dframe, facet=TRUE) +
+  xlab("Year") + ylab("Gas Production (billions of cubic metres)") +
+  ggtitle("Monthly Canadian gas production (billions of cubic metres) Jan 1960 - Feb 2005")
+```
+
+
+## Ex. 3.3
+**What Box-Cox transformation would you select for your retail data (from Exercise 3 in Section 2.10)?**
+
+### retail
+
+Answer:
+
+- The BoxCox transformation of my retail data uses $\lambda = 0.1909638$. It reduces the overall variability of the graph and produces nice seasonality over time. It is more stablized compared to the original time series.
+
+```{r, message=FALSE, warning=FALSE}
+retail <- import("https://raw.githubusercontent.com/shirley-wong/Data-624/main/HW1/retail.xlsx",
+                             skip=1) #this excel sheet has two header rows
+#head(retail)
+#summary(retail)
+myts <- ts(retail[,"A3349746K"], frequency=12, start=c(1982,4))
+autoplot(myts) +
+  ggtitle("Turnover-Western Australia-Total(Industry) Time Series") +
+  xlab("Time") + 
+  ylab("Sales")
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+lambda6 <- BoxCox.lambda(myts)
+lambda6 
+dframe <- cbind(retail_Original = myts,
+                retail_BoxCox = BoxCox(myts, lambda6))
+autoplot(dframe, facet=TRUE) +
+  ggtitle("Turnover-Western Australia-Total(Industry) Time Series") +
+  xlab("Time") + ylab("Sales")
+```
+
+
+## Ex. 3.8
+For your retail time series (from Exercise 3 in Section 2.10):
+
+(a.) Split the data into two parts using `window`.
+
+(b.) Check that your data have been split appropriately by producing the following plot.
+
+(c.) Calculate forecasts using `snaive` applied to `myts.train`.
+
+(d.) Compare the accuracy of your forecasts against the actual values stored in `myts.test`.
+
+(e.) Check the residuals using `checkresiduals(fc)`. Do the residuals appear to be uncorrelated and normally distributed?
+
+(f.) How sensitive are the accuracy measures to the training/test split?
+
+
+### Part a
+
+**Split the data into two parts using `window`.**
+
+Answer:
+
+```{r, message=FALSE, warning=FALSE}
+myts.train <- window(myts, end=c(2010,12))
+myts.test <- window(myts, start=2011)
+myts.train
+myts.test
+```
+
+### Part b
+
+**Check that your data have been split appropriately by producing the following plot.**
+
+Answer:
+
+```{r, message=FALSE, warning=FALSE}
+autoplot(myts) +
+  autolayer(myts.train, series="Training") +
+  autolayer(myts.test, series="Test") +
+  ggtitle("Turnover-Western Australia-Total(Industry) Time Series") +
+  xlab("Time") + ylab("Sales")
+```
+
+### Part c
+
+**Calculate forecasts using `snaive` applied to `myts.train`.**
+
+Answer:
+
+```{r, message=FALSE, warning=FALSE}
+fc <- snaive(myts.train)
+```
+
+
+### Part d
+
+**Compare the accuracy of your forecasts against the actual values stored in `myts.test`.**
+
+Answer:
+
+- The accuracy of my forecasts is better against the actual values stored in `myts.test`.
+
+```{r, message=FALSE, warning=FALSE}
+accuracy(fc, myts.test)
+```
+
+### Part e
+
+**Check the residuals using `checkresiduals(fc)`. Do the residuals appear to be uncorrelated and normally distributed?**
+
+Answer:
+
+- The time plot of the residuals shows the large variation of the residuals across the historical data, especially after 1993, therefore the residual variance is highly possible to be non-constant. This can also be seen on the ACF plot and the histogram of the residuals. The ACF plot shows significant correlations between the lags of residuals. The histogram suggests that the residuals may not be normal as it appears to be right-skewed with mean of the residuals not close to zero. 
+
+- Therefore, the residuals appear to be **correlated** and **not normally distributed**.
+
+```{r, message=FALSE, warning=FALSE}
+checkresiduals(fc)
+```
+
+### Part f
+
+**How sensitive are the accuracy measures to the training/test split?**
+
+Answer:
+
+- To see the senitivity of the accuracy measures to the training/test split, we can try forecasts on different training/test splits sets from the data and calculate the corresponding accuracy measures. 
+
+- By doing training/test split at different cut-point from 2001 to 2010 and calculaing the accuracy for those 10 training set forecasts, we got the below accuracy metrics.
+
+- From the graphs below, we can see that all metrics fluctuate over time with a peak in 2005, low in 2007, and a peak in 2010 again. They are not uniform and show no pattern via the training/test split over the 10 years, which says, **the accuracy measures are very sensitive to the training/test split**.
+
+```{r, message=FALSE, warning=FALSE}
+df <- data.frame()
+for (year in 2001:2010) {
+  myts.train <- window(myts, end=c(year, 12))
+  myts.test <- window(myts, start=year+1)
+  fc <- snaive(myts.train)
+  acc <- accuracy(fc, myts.test) %>% data.frame() %>% rownames_to_column()
+  df <- df %>% rbind(cbind(year,acc)) %>% filter(rowname=="Test set")
+}
+df <- df %>% select(-rowname)
+df
+```
+
+- Look at the accuracy metrics (RMSE, MAE, MAPE, and MASE) by plotting them on the same plane:
+
+```{r, message=FALSE, warning=FALSE}
+metric <-df %>% select(year, RMSE, MAE, MAPE, MASE)
+ggplot(metric, aes(x=year)) +
+  geom_line(aes(y=RMSE, color="RMSE"), linetype="solid") +
+  geom_line(aes(y=MAE, color="MAE"), linetype="dotdash") +
+  geom_line(aes(y=MAPE, color="MAPE"), linetype="dotted") +
+  geom_line(aes(y=MASE, color="MASE"), linetype="longdash") +
+  ggtitle("Accuracy Metrics for Training Set Forecasts of Different Year of Split") +
+  labs(x="Year of Split", y="Accuracy", color="Legend")
+```
+
+- To focus on MASE and MAPE from the above plot:
+
+```{r, message=FALSE, warning=FALSE}
+metric <-df %>% select(year, RMSE, MAE, MAPE, MASE)
+ggplot(metric, aes(x=year)) +
+  geom_line(aes(y=MAPE, color="MAPE"), linetype="dotted") +
+  geom_line(aes(y=MASE, color="MASE"), linetype="longdash") +
+  ggtitle("Accuracy Metrics for Training Set Forecasts of Different Year of Split") +
+  labs(x="Year of Split", y="Accuracy", color="Legend")
+  
+```
+
+
