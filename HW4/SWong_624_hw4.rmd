@@ -1,0 +1,254 @@
+---
+title: "Data 624 HW4: Data Preprocessing"
+author: "Sin Ying Wong"
+date: "03/07/2021"
+output:
+  rmdformats::readthedown:
+    code_folding: show
+    df_print: paged
+    highlight: tango
+    number_sections: yes
+    smooth_scroll: yes
+    theme: united
+    toc_collapsed: yes
+    toc_depth: 5
+    toc_float: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_collapsed: yes
+    toc_float: yes
+  html_notebook: default
+  pdf_document:
+    extra_dependencies:
+    - geometry
+    - multicol
+    - multirow
+  word_document:
+    toc: yes
+    toc_depth: '5'
+theme: lumen
+number_sections: yes
+toc_depth: 3
+---
+
+```{r library, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(GGally)
+library(fpp2)
+library(rio)
+library(gridExtra)
+library(caret)
+library(scales)
+library(naniar)
+library(missForest)
+```
+
+# HW4: Data Preprocessing and Overfitting
+
+Do problems 3.1 and 3.2 in the Kuhn and Johnson book Applied Predictive Modeling. Please submit your Rpubs link along with your .rmd code.
+
+## Ex. 3.1
+The [UC Irvine Machine Learning Repository](http://archive.ics.uci.edu/ml/index.html) contains a data set related to glass identification. The data consist of 214 glass samples labeled as one of seven class categories. There are nine predictors, including the refractive index and percentages of eight elements: Na, Mg, Al, Si, K, Ca, Ba, and Fe.
+
+(a.) Using visualizations, explore the predictor variables to understand their distributions as well as the relationships between predictors.
+
+(b.) Do there appear to be any outliers in the data? Are any predictors skewed?
+
+(c.) Are there any relevant transformations of one or more predictors that might improve the classification model?
+
+
+### Part a
+
+**Using visualizations, explore the predictor variables to understand their distributions as well as the relationships between predictors.**
+
+Answer:
+
+```{r, message=FALSE, warning=FALSE}
+library(mlbench)
+data(Glass)
+str(Glass)
+summary(Glass)
+```
+
+```{r, message=FALSE, warning=FALSE}
+glass <- Glass[,1:9]
+par(mfrow=c(3,3))
+for(i in 1:ncol(glass)){
+  hist(glass[,i],
+       main = names(glass[i]),
+       xlab = names(glass[i]))
+}
+
+glass_corr <- Glass %>% subset(select=-c(Type)) %>% cor()
+ggpairs(Glass[1:9],
+        lower = list(continuous = wrap("smooth", alpha = 0.3, size = 0.2)),
+        title = "Correlation Matrix of Glass[1:9]") +
+  theme(axis.text.y = element_text(size = 6))
+```
+
+### Part b
+
+**Do there appear to be any outliers in the data? Are any predictors skewed?**
+
+Answer:
+
+From the graphs below, we can see that
+
+- there are outliers in all predictors except Mg.
+
+- all predictors are skewed.
+
+```{r, message=FALSE, warning=FALSE}
+par(mfrow=c(3,3))
+for(i in 1:ncol(glass)){
+  boxplot(glass[,i], horizontal = T,
+       main = names(glass[i]),
+       xlab = names(glass[i]))
+}
+
+par(mfrow=c(3,3))
+for(i in 1:ncol(glass)){
+  plot(density(glass[,i]), 
+       main = names(glass[i]),
+       xlab = names(glass[i]))
+}
+```
+
+### Part c
+
+**Are there any relevant transformations of one or more predictors that might improve the classification model?**
+
+Answer:
+
+- Use BoxCox transformation to normalize the predictors.
+
+- The correlation coefficient of RI and Ca is 0.81, which is greater than 0.75. They have greater average correlation among all predictors. Thus, (1) centering and rescaling the data and applying PCA on the model, or (2) removing either RI or Ca from the data can help improve the classification model.
+
+- Create dummy variables for the categorical predictor "Type". If we are using tree models, create 6 dummy variables for all 6 levels (1,2,3,5,6,7). If we are using general linear classification models, e.g. logistics, create 5 dummy variables for any 5 out of the 6 levels.
+
+
+
+## Ex. 3.2
+The soybean data can also be found at the UC Irvine Machine Learning Repository. Data were collected to predict disease in 683 soybeans. The 35 predictors are mostly categorical and include information on the environmental conditions (e.g., temperature, precipitation) and plant conditions (e.g., left spots, mold growth). The outcome labels consist of 19 distinct classes.
+
+(a.) Investigate the frequency distributions for the categorical predictors. Are any of the distributions degenerate in the ways discussed earlier in this chapter?
+
+(b.) Roughly 18% of the data are missing. Are there particular predictors that are more likely to be missing? Is the pattern of missing data related to the classes?
+
+(c.) Develop a strategy for handling missing data, either by eliminating predictors or imputation.
+
+
+### Part a
+
+**Investigate the frequency distributions for the categorical predictors. Are any of the distributions degenerate in the ways discussed earlier in this chapter?**
+
+Answer:
+
+There are three predictors which have
+
+- the fraction of unique values over the sample size is low (<10%).
+
+- the ratio of the frequency of the most prevalent value to the frequency of the second most prevalent value is large (~20).
+
+They are `leaf.mild`, `mycelium`, and `sclerotia`.
+
+```{r, message=FALSE, warning=FALSE}
+library(mlbench)
+data(Soybean)
+str(Soybean)
+summary(Soybean, maxsum = 10)
+```
+
+```{r, message=FALSE, warning=FALSE}
+df <- data.frame(Column = character(),
+                 Lower_than_10Pct = character(),
+                 Ratio_1st_to_2nd = numeric())
+
+for(i in 1:ncol(Soybean)){
+  test <- prop.table(table(Soybean[i])) %>% sort(decreasing = T)
+  max_fct <- max(test)
+  second_fct <- test[2]
+  
+  lower_than_10Pct <- (min(test) <= 0.10) %>% as.character()
+  ratio_1st_to_2nd <- max_fct/second_fct
+
+  df <- df %>% add_row(Column = names(Soybean[i]),
+                       Lower_than_10Pct = lower_than_10Pct, 
+                       Ratio_1st_to_2nd = ratio_1st_to_2nd)
+}
+
+df %>% 
+  rownames_to_column() %>%
+  select(Column, Lower_than_10Pct, Ratio_1st_to_2nd) %>%
+  filter(Lower_than_10Pct=='TRUE', Ratio_1st_to_2nd>=20)
+```
+
+
+### Part b
+
+**Roughly 18% of the data are missing. Are there particular predictors that are more likely to be missing? Is the pattern of missing data related to the classes?**
+
+Answer:
+
+- About 50% of the predictros contain more than 70 missing values. Typically, there are 4 predictors each with 121 missing values, which are `server`, `seed.tmt`, `lodging` and `hail`.
+
+- From the study, missing data is highly related to the classes. There are 4 classes having multiple predictors containing 100% NA values: `2-4-d-injury`, `cyst-nematode`, `diaporthe-pod-&-stem-blight`, and `herbicide-injury`.
+
+```{r, message=FALSE, warning=FALSE}
+gg_miss_var(Soybean) + 
+  theme(axis.text.y = element_text(size = 8))
+```
+
+```{r, message=FALSE, warning=FALSE}
+Soybean %>% 
+  gather(key = 'Column', value = 'Value', -Class) %>%
+  mutate(Value = if_else(!is.na(Value), 'Not NA','NA')) %>%
+  group_by(Class, Column, Value) %>%
+  summarise(Count = n()) %>%
+  left_join(Soybean %>% group_by(Class) %>% summarise(Class_Count = n()), by = 'Class') %>%
+  mutate(Pct_Count = Count/Class_Count) %>%
+  select(-Count, -Class_Count) %>%
+  filter(Value == 'NA', Pct_Count >= 0.8) %>%
+  mutate(Pct_Count = percent(Pct_Count)) %>%
+  spread(key = 'Column', value = 'Pct_Count')
+
+Soybean %>% 
+  filter(Class %in% c('2-4-d-injury','cyst-nematode','diaporthe-pod-&-stem-blight','herbicide-injury')) %>%
+  gg_miss_var(facet = Class) + 
+  theme(axis.text.y = element_text(size = 5))
+  
+```
+
+
+### Part c
+
+**Develop a strategy for handling missing data, either by eliminating predictors or imputation.**
+
+Answer:
+
+By eliminating predictors and imputation:
+
+- First, remove `mycelium`, `sclerotia`, `shriveling`, `lodging`, and `leaf.malf` from the `Soybean` data which have nearly zero variance.
+
+- Second, use `missForest` function to impute missing values.
+
+```{r, message=FALSE, warning=FALSE}
+Soybean %>%
+  select(-Class) %>%
+  apply(2, function(x) var(x,na.rm = TRUE)) %>%
+  sort()
+```
+
+```{r, message=FALSE, warning=FALSE}
+Soybean_mf <- Soybean %>% 
+  select(-c('mycelium', 'sclerotia', 'shriveling', 'lodging','leaf.malf')) %>%
+  missForest() %>%
+  .$ximp
+```
+
+```{r, message=FALSE, warning=FALSE}
+gg_miss_var(Soybean_mf) + 
+  theme(axis.text.y = element_text(size = 10))
+Soybean_mf
+```
