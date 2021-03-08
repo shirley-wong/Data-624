@@ -125,9 +125,6 @@ Answer:
 
 - The correlation coefficient of RI and Ca is 0.81, which is greater than 0.75. They have greater average correlation among all predictors. Thus, (1) centering and rescaling the data and applying PCA on the model, or (2) removing either RI or Ca from the data can help improve the classification model.
 
-- Create dummy variables for the categorical predictor "Type". If we are using tree models, create 6 dummy variables for all 6 levels (1,2,3,5,6,7). If we are using general linear classification models, e.g. logistics, create 5 dummy variables for any 5 out of the 6 levels.
-
-
 
 ## Ex. 3.2
 The soybean data can also be found at the UC Irvine Machine Learning Repository. Data were collected to predict disease in 683 soybeans. The 35 predictors are mostly categorical and include information on the environmental conditions (e.g., temperature, precipitation) and plant conditions (e.g., left spots, mold growth). The outcome labels consist of 19 distinct classes.
