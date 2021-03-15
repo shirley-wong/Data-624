@@ -1,0 +1,611 @@
+---
+title: "Data 624 HW5: Exponential Smoothing"
+author: "Sin Ying Wong"
+date: "03/14/2021"
+output:
+  rmdformats::readthedown:
+    code_folding: show
+    df_print: paged
+    highlight: tango
+    number_sections: yes
+    smooth_scroll: yes
+    theme: united
+    toc_collapsed: yes
+    toc_depth: 5
+    toc_float: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_collapsed: yes
+    toc_float: yes
+  html_notebook: default
+  pdf_document:
+    extra_dependencies:
+    - geometry
+    - multicol
+    - multirow
+  word_document:
+    toc: yes
+    toc_depth: '5'
+theme: lumen
+number_sections: yes
+toc_depth: 3
+---
+
+```{r library, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(fpp2)
+library(rio)
+library(gridExtra)
+library(scales)
+library(naniar)
+library(missForest)
+```
+
+# HW5: Exponential Smoothing
+
+Do exercises 7.1, 7.5,7.6, 7.7, 7.8 and 7.9  in Hyndman.  Please submit both the link to your Rpubs and the .rmd file.
+
+## Ex. 7.1
+Consider the `pigs` series — the number of pigs slaughtered in Victoria each month.
+
+(a.) Use the `ses()` function in $R$ to find the optimal values of $\alpha$ and $l_{0}$, and generate forecasts for the next four months.
+
+(b.) Compute a 95% prediction interval for the first forecast using $\hat{y}\pm 1.96s$ where $s$ is the standard deviation of the residuals. Compare your interval with the interval produced by $R$.
+
+### Part a
+
+**Use the `ses()` function in $R$ to find the optimal values of $\alpha$ and $l_{0}$, and generate forecasts for the next four months.**
+
+Answer:
+
+- From the `ses` function below, we got $\alpha = 0.2971$ and $l_{0} = 77260.0561$.
+
+- The forecasts for the next four months are showed below in table form and in graph form.
+
+```{r, message=FALSE, warning=FALSE}
+#pigs
+pigs_ses <- ses(pigs, h=4)
+
+summary(pigs_ses)
+
+autoplot(pigs_ses) +
+  autolayer(fitted(pigs_ses), series="Fitted") +
+  xlab("Year") + ylab("Number of Pigs Slaughtered in Victoria")
+```
+
+
+
+### Part b
+
+**Compute a 95% prediction interval for the first forecast using $\hat{y}\pm 1.96s$ where $s$ is the standard deviation of the residuals. Compare your interval with the interval produced by $R$.**
+
+Answer:
+
+- From the $R$ summary table below, the 95% prediction interval for the first forecast is $[78611.97, 119020.8]$.
+
+- By calculation using $\hat{y}\pm 1.96s$ , the 95% prediction interval for the first forecast is $[78679.97, 118952.84]$.
+
+- The interval computed by the formula has a smaller range than the one produced by $R$.
+
+```{r, message=FALSE, warning=FALSE}
+#summary(pigs_ses) #by R
+print(c(pigs_ses$lower[1, "95%"], pigs_ses$upper[1, "95%"]))
+
+s <- sd(pigs_ses$residuals) #by formula
+print(c(pigs_ses$mean[1]-1.96*s, pigs_ses$mean[1]+1.96*s))
+```
+
+
+## Ex. 7.5
+Data set `books` contains the daily sales of paperback and hardcover books at the same store. The task is to forecast the next four days’ sales for paperback and hardcover books.
+
+(a.) Plot the series and discuss the main features of the data.
+
+(b.) Use the `ses()` function to forecast each series, and plot the forecasts.
+
+(c.) Compute the RMSE values for the training data in each case.
+
+### Part a
+
+**Plot the series and discuss the main features of the data.**
+
+Answer:
+
+- Over the 30 days, there is an increasing trend on both paperback and hardcover books.
+
+- Due to the dramatic fluctuation in the daily sales, it is hard to see any seasonality or cyclic factors for both type of books.
+
+```{r, message=FALSE, warning=FALSE}
+#books
+
+autoplot(books) +
+  xlab("Day") + ylab("Number of Books") +
+  ggtitle("Daily Sales of Paperback and Hardcover Books at the same store")
+```
+
+### Part b
+
+**Use the `ses()` function to forecast each series, and plot the forecasts.**
+
+Answer:
+
+- The forecasts for both paperback and hardcover books using SES method are flat. 
+
+```{r, message=FALSE, warning=FALSE}
+pb_ses <- ses(books[, "Paperback"], h=4)
+#summary(pb_ses)
+
+hc_ses <- ses(books[, "Hardcover"], h=4)
+#summary(hc_ses)
+
+autoplot(books) +
+  autolayer(pb_ses, series="Paperback", alpha=0.6) +
+  autolayer(hc_ses, series="Hardcover", alpha=0.4) +
+  xlab("Day") + ylab("Number of Books") + 
+  ggtitle("Daily Sales of Paperback and Hardcover Books at the same store")
+```
+
+
+### Part c
+
+**Compute the RMSE values for the training data in each case.**
+
+Answer:
+
+- The RMSE for the `ses` Paperback books training data is 33.6377.
+
+- The RMSE for the `ses` Hardcover books training data is 31.9310.
+
+```{r, message=FALSE, warning=FALSE}
+print(paste("The RMSE for the `ses` Paperback books training data is",accuracy(pb_ses)[2]))
+print(paste("The RMSE for the `ses` Hardcover books training data is",accuracy(hc_ses)[2]))
+```
+
+
+## Ex. 7.6
+
+(a.) Now apply Holt’s linear method to the `paperback` and `hardback` series and compute four-day forecasts in each case.
+
+(b.) Compare the RMSE measures of Holt’s method for the two series to those of simple exponential smoothing in the previous question. (Remember that Holt’s method is using one more parameter than SES.) Discuss the merits of the two forecasting methods for these data sets.
+
+(c.) Compare the forecasts for the two series using both methods. Which do you think is best?
+
+(d.) Calculate a 95% prediction interval for the first forecast for each series, using the RMSE values and assuming normal errors. Compare your intervals with those produced using `ses` and `holt`.
+
+### Part a
+
+**Now apply Holt’s linear method to the `paperback` and `hardback` series and compute four-day forecasts in each case.**
+
+Answer:
+
+- There are increasing trend in both of the forecasts using Holt's linear method. 
+
+```{r, message=FALSE, warning=FALSE}
+pb_holt <- holt(books[, "Paperback"], h=4)
+#summary(pb_holt)
+hc_holt <- holt(books[, "Hardcover"], h=4)
+#summary(hc_holt)
+
+autoplot(books) +
+  autolayer(pb_holt, series="Paperback", alpha=0.6) +
+  autolayer(hc_holt, series="Hardcover", alpha=0.4) +
+  xlab("Day") + ylab("Number of Books") + 
+  ggtitle("Daily Sales of Paperback and Hardcover Books at the same store")
+```
+
+### Part b
+
+**Compare the RMSE measures of Holt’s method for the two series to those of simple exponential smoothing in the previous question. (Remember that Holt’s method is using one more parameter than SES.) Discuss the merits of the two forecasting methods for these data sets.**
+
+Answer:
+
+- The RMSE measures of Holt's method for the two series are smaller than those of simple exponential smoothing method, which are better.
+
+- Holt's linear method using one more parameter than SES, $b_{t}$, an estimate of the trend of the series at time $t$. This allows us to forecast data with trend, here in this data as an increasing trend.
+
+- Therefore, Holt's linear method performs better than simple exponential smoothing method.
+
+```{r, message=FALSE, warning=FALSE}
+print(paste("The RMSE for the SES Paperback and Hardcover training data is",
+            accuracy(pb_ses)[2],"and",accuracy(hc_ses)[2]))
+
+print(paste("The RMSE for the Holt's Paperback and Hardcover training data is",
+            accuracy(pb_holt)[2],"and",accuracy(hc_holt)[2]))
+```
+
+### Part c
+
+**Compare the forecasts for the two series using both methods. Which do you think is best?**
+
+Answer:
+
+- From the graph below, it is clear that Holt's linear method allows us to forecast the trend using the same dataset compared to SES. Holt's linear method also has smaller RMSE compared to SES.
+
+- Therefore, Holt's linear method is better than SES.
+
+
+```{r, message=FALSE, warning=FALSE}
+autoplot(books) +
+  autolayer(pb_ses, series="SES_Paperback", PI=FALSE) +
+  autolayer(hc_ses, series="SES_Hardcover", PI=FALSE) +
+  autolayer(pb_holt, series="Holt_Paperback", PI=FALSE) +
+  autolayer(hc_holt, series="Holt_Hardcover", PI=FALSE) +
+  xlab("Day") + ylab("Number of Books") + 
+  ggtitle("Daily Sales of Paperback and Hardcover Books at the same store")
+```
+
+
+### Part d
+
+**Calculate a 95% prediction interval for the first forecast for each series, using the RMSE values and assuming normal errors. Compare your intervals with those produced using `ses` and `holt`.**
+
+Answer:
+
+- By using RMSE values and assuming normal errors, we have the 95% prediction intervals:
+
+| 95% Prediction Interval | Lower 95 | Upper 95 |
+|-------------------------|----------|----------|
+| SES-Paperback           | 141.1798 | 273.0395 |
+| SES-Hardcover           | 176.9753 | 302.1449 |
+| Holt-Paperback          | 148.4384 | 270.4951 |
+| Holt-Hardcover          | 196.8745 | 303.4733 |
+
+- By using $R$, we have the 95% prediction intervals:
+
+| 95% Prediction Interval | Lower 95 | Upper 95 |
+|-------------------------|----------|----------|
+| SES-Paperback           | 138.8670 | 275.3523 |
+| SES-Hardcover           | 174.7799 | 304.3403 |
+| Holt-Paperback          | 143.9130 | 275.0205 |
+| Holt-Hardcover          | 192.9222 | 307.4256 |
+
+```{r eval=FALSE, message=FALSE, warning=FALSE}
+#by calculation using RMSE and assuming normal errors
+print(paste("95% PI of SES Paperback: (",pb_ses$mean[1]-1.96*accuracy(pb_ses)[2],",",
+            pb_ses$mean[1]+1.96*accuracy(pb_ses)[2],")"))
+print(paste("95% PI of SES Hardcover: (",hc_ses$mean[1]-1.96*accuracy(hc_ses)[2],",",
+            hc_ses$mean[1]+1.96*accuracy(hc_ses)[2],")"))
+print(paste("95% PI of Holt's Paperback: (",pb_holt$mean[1]-1.96*accuracy(pb_holt)[2],",",
+            pb_holt$mean[1]+1.96*accuracy(pb_holt)[2],")"))
+print(paste("95% PI of Holt's Hardcover: (",hc_holt$mean[1]-1.96*accuracy(hc_holt)[2],",",
+            hc_holt$mean[1]+1.96*accuracy(hc_holt)[2],")"))
+
+#by R
+print(paste("95% PI of SES Paperback: (",pb_ses$lower[1, "95%"],",",pb_ses$upper[1, "95%"],")"))
+print(paste("95% PI of SES Hardcover: (",hc_ses$lower[1, "95%"],",",hc_ses$upper[1, "95%"],")"))
+print(paste("95% PI of Holt's Paperback: (",pb_holt$lower[1, "95%"],",",pb_holt$upper[1, "95%"],")"))
+print(paste("95% PI of Holt's Hardcover: (",hc_holt$lower[1, "95%"],",",hc_holt$upper[1, "95%"],")"))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#by calculation using RMSE and assuming normal errors
+print(paste("95% PI of SES Paperback: (",pb_ses$mean[1]-1.96*(accuracy(pb_ses)[2]),",",
+            pb_ses$mean[1]+1.96*accuracy(pb_ses)[2],")"))
+print(paste("95% PI of SES Hardcover: (",hc_ses$mean[1]-1.96*accuracy(hc_ses)[2],",",
+            hc_ses$mean[1]+1.96*accuracy(hc_ses)[2],")"))
+print(paste("95% PI of Holt's Paperback: (",pb_holt$mean[1]-1.96*accuracy(pb_holt)[2],",",
+            pb_holt$mean[1]+1.96*accuracy(pb_holt)[2],")"))
+print(paste("95% PI of Holt's Hardcover: (",hc_holt$mean[1]-1.96*accuracy(hc_holt)[2],",",
+            hc_holt$mean[1]+1.96*accuracy(hc_holt)[2],")"))
+
+#by R
+print(paste("95% PI of SES Paperback: (",pb_ses$lower[1, "95%"],",",pb_ses$upper[1, "95%"],")"))
+print(paste("95% PI of SES Hardcover: (",hc_ses$lower[1, "95%"],",",hc_ses$upper[1, "95%"],")"))
+print(paste("95% PI of Holt's Paperback: (",pb_holt$lower[1, "95%"],",",pb_holt$upper[1, "95%"],")"))
+print(paste("95% PI of Holt's Hardcover: (",hc_holt$lower[1, "95%"],",",hc_holt$upper[1, "95%"],")"))
+```
+
+
+## Ex. 7.7
+For this exercise use data set `eggs`, the price of a dozen eggs in the United States from 1900–1993. Experiment with the various options in the `holt()` function to see how much the forecasts change with damped trend, or with a Box-Cox transformation. Try to develop an intuition of what each argument is doing to the forecasts.
+
+[Hint: use `h=100` when calling `holt()` so you can clearly see the differences between the various options when plotting the forecasts.]
+
+Which model gives the best RMSE?
+
+### Part a
+
+**For this exercise use data set `eggs`, the price of a dozen eggs in the United States from 1900–1993. Experiment with the various options in the `holt()` function to see how much the forecasts change with damped trend, or with a Box-Cox transformation. Try to develop an intuition of what each argument is doing to the forecasts.**
+
+Answer:
+
+- The `eggs` dataset has an overall decreasing trend. There are no obvious seasonality or cyclic factors.
+
+- Using `holt()` function, I will forecast with (1) Holt's linear method, (2) Holt's with damped trend, (3) Holt's with BoxCox transformation, and (4) Holt's with Boxcox transformation plus damped trend. They are all plotted on the same forecasting graph below.
+
+```{r, message=FALSE, warning=FALSE}
+#eggs
+
+autoplot(eggs) +
+  xlab("Year") + ylab("Price (Dollar)") + 
+  ggtitle("Price of A Dozen Eggs in USA (1900-1993)")
+
+eggs_holt <- holt(eggs, h=100) #holt
+eggs_holt_damped <- holt(eggs, h=100, damped=TRUE) #holt & damped
+eggs_holt_boxcox <- holt(eggs, h=100, lambda="auto") #holt & boxcox
+eggs_holt_boxcox_damped <- holt(eggs, h=100, lambda="auto", damped=TRUE) #holt & boxcox & damped
+
+autoplot(eggs) +
+  autolayer(eggs_holt, series="Holt", PI=FALSE) +
+  autolayer(eggs_holt_damped, series="Holt-Damped", PI=FALSE) +
+  autolayer(eggs_holt_boxcox, series="Holt-Boxcox", PI=FALSE) +
+  autolayer(eggs_holt_boxcox_damped, series="Holt-Boxcox-Damped", PI=FALSE) +
+  xlab("Year") + ylab("Price (Dollar)") + 
+  ggtitle("Price of A Dozen Eggs in USA (1900-1993)")
+
+```
+
+
+### Part b
+
+**Which model gives the best RMSE?**
+
+Answer:
+
+- The RMSE of all methods are:
+
+| Method             | RMSE    |
+|--------------------|---------|
+| Holt_boxcox        | 26.3938 |
+| Holt_boxcox_damped | 26.5332 |
+| Holt_damped        | 26.5402 |
+| Holt               | 26.5822 |
+
+
+- The Holt's linear method with boxcox transformation performs the best. It has the lowest RMSE 26.3938.
+
+
+```{r eval=FALSE, message=FALSE, warning=FALSE}
+print(paste("RMSE of Holt's: ",accuracy(eggs_holt)[2]))
+print(paste("RMSE of damped Holt's: ",accuracy(eggs_holt_damped)[2]))
+print(paste("RMSE of Boxcox Holt's: ",accuracy(eggs_holt_boxcox)[2]))
+print(paste("RMSE of Boxcox damped Holt's: ",accuracy(eggs_holt_boxcox_damped)[2]))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+print(paste("RMSE of Holt's: ",accuracy(eggs_holt)[2]))
+print(paste("RMSE of damped Holt's: ",accuracy(eggs_holt_damped)[2]))
+print(paste("RMSE of Boxcox Holt's: ",accuracy(eggs_holt_boxcox)[2]))
+print(paste("RMSE of Boxcox damped Holt's: ",accuracy(eggs_holt_boxcox_damped)[2]))
+```
+
+## Ex. 7.8
+Recall your retail time series data (from Exercise 3 in Section 2.10).
+
+(a.) Why is multiplicative seasonality necessary for this series?
+
+(b.) Apply Holt-Winters’ multiplicative method to the data. Experiment with making the trend damped.
+
+(c.) Compare the RMSE of the one-step forecasts from the two methods. Which do you prefer?
+
+(d.) Check that the residuals from the best method look like white noise.
+
+(e.) Now find the test set RMSE, while training the model to the end of 2010. Can you beat the seasonal naive approach from Exercise 8 in Section 3.7?
+
+### Part a
+
+**Why is multiplicative seasonality necessary for this series?**
+
+Answer:
+
+- From our textbook Sec 7.3, the multiplicative method is preferred when the seasonality variations are changing proportional to the level of the series. With the multiplicative method, the seasonal component is expressed in relative terms (percentages) and the series is seasonally adjusted by dividing through by the seasonal component. 
+
+- It is necessary to use multiplicative method here because the seasonality in this time series changes gradually and increasing proportionally over time.
+
+```{r, message=FALSE, warning=FALSE}
+retail <- import("https://raw.githubusercontent.com/shirley-wong/Data-624/main/HW1/retail.xlsx",
+                             skip=1) #this excel sheet has two header rows
+myts <- ts(retail[,"A3349746K"], frequency=12, start=c(1982,4))
+autoplot(myts) +
+  xlab("Year") + ylab("Sales") + 
+  ggtitle("Turnover-Western Australia-Total(Industry) Time Series")
+```
+
+### Part b
+
+**Apply Holt-Winters’ multiplicative method to the data. Experiment with making the trend damped.**
+
+Answer:
+
+- The multiplicative forecast has an obvious increasing trend.
+
+- By looking at the zoom-in graph, the multiplicative forecast with damped method has a nearly flattened but actually a very small increasing trend.
+
+```{r, message=FALSE, warning=FALSE}
+myts_hw <- hw(myts, seasonal="multiplicative", h=100)
+myts_hw_damped <- hw(myts, seasonal="multiplicative", h=100, damped=TRUE)
+
+autoplot(myts) +
+  autolayer(myts_hw, series="Multiplicative", PI=FALSE) +
+  autolayer(myts_hw_damped, series="Multiplicative-Damped", PI=FALSE) +
+  xlab("Year") + ylab("Sales") + 
+  ggtitle("Turnover-Western Australia-Total(Industry) Time Series") +
+  theme(legend.position="bottom")
+
+autoplot(myts) +
+  autolayer(myts_hw, series="Multiplicative", PI=FALSE, alpha=0.2) +
+  autolayer(myts_hw_damped, series="Multiplicative-Damped", PI=FALSE) +
+  xlab("Year") + ylab("Sales") + 
+  ggtitle("**Zoom-in on the forecast part") +
+  theme(legend.position="bottom") +
+  xlim(c(2013,2023)) + ylim(c(2000,4800))
+```
+
+### Part c
+
+**Compare the RMSE of the one-step forecasts from the two methods. Which do you prefer?**
+
+Answer:
+
+- The RMSE of the one-step forecasts from the two methods are:
+
+| Method                              | RMSE    |
+|-------------------------------------|---------|
+| Holt-Winter's multiplicative        | 31.6938 |
+| Holt-Winter's multiplicative damped | 31.5360 |
+
+- I prefer the Holt-Winter's multiplicative damped method as it has a smaller RMSE.
+
+```{r, message=FALSE, warning=FALSE}
+myts_hw_1 <- hw(myts, seasonal="multiplicative", h=1)
+myts_hw_damped_1 <- hw(myts, seasonal="multiplicative", h=1, damped=TRUE)
+
+```
+
+```{r eval=FALSE, message=FALSE, warning=FALSE}
+print(paste("RMSE of Holt-Winter's multiplicative method: ",accuracy(myts_hw_1)[2]))
+print(paste("RMSE of Holt-Winter's multiplicative damped method: ",accuracy(myts_hw_damped_1)[2]))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+print(paste("RMSE of Holt-Winter's multiplicative method: ",accuracy(myts_hw_1)[2]))
+print(paste("RMSE of Holt-Winter's multiplicative damped method: ",accuracy(myts_hw_damped_1)[2]))
+```
+
+### Part d
+
+**Check that the residuals from the best method look like white noise.**
+
+Answer:
+
+Let's study the residuals from the Holt-Winter's multiplicative damped method as it is the better model from part c.
+
+- There are couple up peaks and low peaks in the residual time graph between 1995 and 2001. 
+
+- The ACF plot shows some significant correlations between the lags of residuals.
+
+- The mean of the residuals are very close to 0 from the nearly normal histogram.
+
+- The p-value from the Ljung-Box test is nearly 0.
+
+$\therefore$  Although the residuals shows some correlations, they do not look like white noise
+
+```{r, warning=FALSE}
+checkresiduals(myts_hw_damped_1)
+```
+
+### Part e
+
+**Now find the test set RMSE, while training the model to the end of 2010. Can you beat the seasonal naive approach from Exercise 8 in Section 3.7?**
+
+Answer:
+
+- The RMSE on the 3 methods are:
+
+| RMSE on each method                 | Training Set | Test Set  |
+|-------------------------------------|--------------|-----------|
+| Holt-Winter's multiplicative        | 28.76835     | 257.16472 |
+| Holt-Winter's multiplicative damped | 28.82823     | 320.82257 |
+| Seasonal Naive                      | 83.42504     | 381.15950 |
+
+- The best method here is the Holt-Winter's multiplicative method with the lowest RMSE values.
+
+
+```{r, message=FALSE, warning=FALSE}
+myts_train <- window(myts, end=c(2010,12))
+myts_test <- window(myts, start=2011)
+
+myts_train_hw <- hw(myts_train, h=36, seasonal="multiplicative")
+myts_train_hw_damped <- hw(myts_train, h=36, seasonal="multiplicative", damped=TRUE)
+myts_train_snaive <- snaive(myts_train, h=36)
+
+```
+
+```{r eval=FALSE, message=FALSE, warning=FALSE}
+print("RMSE of Holt-Winter's multiplicative method: ")
+accuracy(myts_train_hw, myts_test)[,2]
+print("RMSE of Holt-Winter's multiplicative damped method: ")
+accuracy(myts_train_hw_damped, myts_test)[,2]
+print("RMSE of seasonal naive method: ")
+accuracy(myts_train_snaive, myts_test)[,2]
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+print("RMSE of Holt-Winter's multiplicative method: ")
+accuracy(myts_train_hw, myts_test)[,2]
+print("RMSE of Holt-Winter's multiplicative damped method: ")
+accuracy(myts_train_hw_damped, myts_test)[,2]
+print("RMSE of seasonal naive method: ")
+accuracy(myts_train_snaive, myts_test)[,2]
+```
+
+```{r, message=FALSE, warning=FALSE}
+autoplot(myts_train) +
+  autolayer(myts_train_hw, series="Multiplicative", PI=FALSE) +
+  autolayer(myts_train_hw_damped, series="Multiplicative-Damped", PI=FALSE) +
+  autolayer(myts_train_snaive, series="Seasonal Naive", PI=FALSE) +
+  autolayer(myts_test, series="Test Set") + 
+  xlab("Year") + ylab("Sales") + 
+  ggtitle("Turnover-Western Australia-Total(Industry) Time Series") +
+  theme(legend.position="bottom")
+
+autoplot(myts_train) +
+  autolayer(myts_train_hw, series="Multiplicative", PI=FALSE) +
+  autolayer(myts_train_hw_damped, series="Multiplicative-Damped", PI=FALSE) +
+  autolayer(myts_train_snaive, series="Seasonal Naive", PI=FALSE) +
+  autolayer(myts_test, series="Test Set") + 
+  xlab("Year") + ylab("Sales") + 
+  ggtitle("**Zoom-in on the forecast part") +
+  theme(legend.position="bottom") +
+  xlim(c(2010,2014)) + ylim(c(1800,3500))
+```
+
+
+## Ex. 7.9
+For the same retail data, try an STL decomposition applied to the Box-Cox transformed series, followed by ETS on the seasonally adjusted data. How does that compare with your best previous forecasts on the test set?
+
+### Answer
+
+Answer:
+
+I use `stlf()` function to perform the work. In textbook Sec 6.8, it introduced the `stlf()` function in the last paragraphs:
+
+"`stlf()` function is a short-cut approach to decompose the time series using STL, forecast the seasonally adjusted series, and return the reasonalised forecasts. The `stlf()` function uses `mstl()` to carry out the decomposition, so there are default values for `s.window` and `t.window`. If `method` is not specified, it will use the `ETS` approach applied to the seasonally adjusted series." "Use the `lambda` argument if you think a Box-Cox transformation is required."
+
+- From the graph, the STLF forecast is closer to our test set than the Holt-Winter's multiplicative method.
+
+- The RMSE value of `stlf()` function is the lowest compared to the ones we got in Ex 7.8. 
+
+| RMSE on each method                 | Training Set | Test Set  |
+|-------------------------------------|--------------|-----------|
+| STLF                                | 25.37597     | 125.22173 |
+| Holt-Winter's multiplicative        | 28.76835     | 257.16472 |
+| Holt-Winter's multiplicative damped | 28.82823     | 320.82257 |
+| Seasonal Naive                      | 83.42504     | 381.15950 |
+
+Therefore, STL decomposition applied to the Box-Cox transformed series followed by ETS on the seasonally adjust data performs the best among all methods.
+
+```{r, message=FALSE, warning=FALSE}
+myts_train_stlf <- stlf(myts_train, lambda=BoxCox.lambda(myts_train), 
+                        method="ets", allow.multiplicative.trend=TRUE, h=36)
+```
+
+```{r eval=FALSE, message=FALSE, warning=FALSE}
+print("RMSE of STLF method: ")
+accuracy(myts_train_stlf, myts_test)[,2]
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+print("RMSE of STLF method: ")
+accuracy(myts_train_stlf, myts_test)[,2]
+```
+
+```{r, message=FALSE, warning=FALSE}
+autoplot(myts_train) +
+  autolayer(myts_train_hw, series="Multiplicative", PI=FALSE) +
+  autolayer(myts_train_stlf, series="STLF", PI=FALSE) +
+  autolayer(myts_test, series="Test Set") + 
+  xlab("Year") + ylab("Sales") + 
+  ggtitle("Turnover-Western Australia-Total(Industry) Time Series") +
+  theme(legend.position="bottom")
+
+autoplot(myts_train) +
+  autolayer(myts_train_hw, series="Multiplicative", PI=FALSE) +
+  autolayer(myts_train_stlf, series="STLF", PI=FALSE) +
+  autolayer(myts_test, series="Test Set") + 
+  xlab("Year") + ylab("Sales") + 
+  ggtitle("**Zoom-in on the forecast part") +
+  theme(legend.position="bottom") +
+  xlim(c(2010,2014)) + ylim(c(1800,3500))
+```
