@@ -1,0 +1,678 @@
+---
+title: "Data 624 HW6: ARIMA"
+author: "Sin Ying Wong"
+date: "03/28/2021"
+output:
+  rmdformats::readthedown:
+    code_folding: show
+    df_print: paged
+    highlight: tango
+    number_sections: yes
+    smooth_scroll: yes
+    theme: united
+    toc_collapsed: yes
+    toc_depth: 5
+    toc_float: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_collapsed: yes
+    toc_float: yes
+  html_notebook: default
+  pdf_document:
+    extra_dependencies:
+    - geometry
+    - multicol
+    - multirow
+  word_document:
+    toc: yes
+    toc_depth: '5'
+theme: lumen
+number_sections: yes
+toc_depth: 3
+---
+
+```{r library, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(fpp2)
+library(urca)
+library(rio)
+library(gridExtra)
+```
+
+# HW6:ARIMA
+
+Do the exercises 8.1, 8.2, 8.3, 8.5, 8.6, 8.7 in Hyndman.  Please submit both the Rpubs link as well as your .rmd file.
+
+## Ex. 8.1
+
+Figure 8.31 shows the ACFs for 36 random numbers, 360 random numbers and 1,000 random numbers.
+
+(a.) Explain the differences among these figures. Do they all indicate that the data are white noise?
+
+![Fig 8.31](https://raw.githubusercontent.com/shirley-wong/Data-624/main/HW6/Fig%208.31.JPG)
+
+(b.) Why are the critical values at different distances from the mean of zero? Why are the autocorrelations different in each figure when they each refer to white noise?
+
+### Part a
+
+**Explain the differences among these figures. Do they all indicate that the data are white noise?**
+
+Answer:
+
+- When the amount of the random numer increases, the critical value range decreases and the autocorrelation approaches zero.
+
+- In all three plots, none of the spikes are outside of the range of critical value. Therefore, they all indicate that the data are white noise. 
+
+### Part b
+
+**Why are the critical values at different distances from the mean of zero? Why are the autocorrelations different in each figure when they each refer to white noise?**
+
+Answer:
+
+- The formula of critical value is $\pm \frac{1.96}{\sqrt{T-d}}$, where $T$ is the sample size and $d$ is the amount of differencing. When $T$ increases, critical value decreases. Thus, when the sample size increases among the three graphs, the range of the critical value decreases and the autocorrelations approach zero.
+
+
+## Ex. 8.2
+
+A classic example of a non-stationary series is the daily closing IBM stock price series (data set `ibmclose`). Use R to plot the daily closing prices for IBM stock and the ACF and PACF. Explain how each plot shows that the series is non-stationary and should be diffrenced.
+
+### Part a
+
+**Use R to plot the daily closing prices for IBM stock and the ACF and PACF.**
+
+Answer:
+
+```{r, message=FALSE, warning=FALSE}
+ggtsdisplay(ibmclose)
+```
+
+### Part b
+
+**Explain how each plot shows that the series is non-stationary and should be differenced**
+
+Answer:
+
+- There are obvious trends throughout the stock price plot: increasing from 0 to around 120, then decrease from 120 to about 270. The ACF plot shows significant autocorrelations between the elements. The first lag value in PACF is statiscally significant, whereas partial autocorrelations for all other lags are not. Therefore, the series is non-stationary and should be differenced.
+
+
+## Ex. 8.3
+
+For the following series, find an appropriate Box-Cox transformation and order of differencing in order to obtain stationary data.
+
+(a.) `usnetelec`
+
+(b.) `usgdp`
+
+(c.) `mcopper`
+
+(d.) `enplanements`
+
+(e.) `visitors`
+
+### Part a
+
+**usnetelec**
+
+Answer:
+
+```{r, message=FALSE, warning=FALSE}
+ggtsdisplay(usnetelec, main="Annual US net electricity generation (billion kwh) for 1949-2003")
+```
+
+- The plot shows an increasing trend. The PACF has a statiscally significant lag1 while others are not. Thus, it is a non-stationary time series.
+
+- The number of differencing required is 2 by using the function `ndiffs` below
+
+- Then we can plot the stationary data after differencing the original data twice.
+
+```{r, message=FALSE, warning=FALSE}
+usnetelec_boxcox <- BoxCox(usnetelec, lambda=BoxCox.lambda(usnetelec))
+ndiffs(usnetelec_boxcox)
+
+usnetelec_boxcox_diff <- diff(diff(usnetelec_boxcox))
+ggtsdisplay(usnetelec_boxcox_diff, main="usnetelec with boxcox and differencing twice")
+```
+
+- To verify, the test statistic is much bigger than 1% critical value at first, indicating that the null hypothesis is rejected and the data are not stationary.  After differencing the data, reapplying the test gives a tiny test statistic which well within the range. We would expect for stationary data after differencing the data twice.
+
+```{r, message=FALSE, warning=FALSE}
+usnetelec_boxcox %>% ur.kpss() %>% summary()
+usnetelec_boxcox %>% diff() %>% diff() %>% ur.kpss() %>% summary()
+```
+
+
+
+### Part b
+
+**usgdp**
+
+Answer:
+
+```{r, message=FALSE, warning=FALSE}
+ggtsdisplay(usgdp, main="Quarterly US GDP. 1947:1 - 2006.1.")
+```
+
+- The plot shows an increasing trend. The PACF has a statiscally significant lag1 while others are not. Thus, it is a non-stationary time series.
+
+- The number of differencing required is 1 by using the function `ndiffs` below
+
+- Then we can plot the stationary data after differencing the original data once.
+
+```{r, message=FALSE, warning=FALSE}
+usgdp_boxcox <- BoxCox(usgdp, lambda=BoxCox.lambda(usgdp))
+ndiffs(usgdp_boxcox)
+
+usgdp_boxcox_diff <- diff(usgdp_boxcox)
+ggtsdisplay(usgdp_boxcox_diff, main="usgdp with boxcox and differencing")
+```
+
+- To verify, the test statistic is much bigger than 1% critical value at first, indicating that the null hypothesis is rejected and the data are not stationary.  After differencing the data, reapplying the test gives a tiny test statistic which well within the range. We would expect for stationary data after differencing the data once.
+
+```{r, message=FALSE, warning=FALSE}
+usgdp_boxcox %>% ur.kpss() %>% summary()
+usgdp_boxcox %>% diff() %>% ur.kpss() %>% summary()
+```
+
+### Part c
+
+**mcopper**
+
+Answer:
+
+```{r, message=FALSE, warning=FALSE}
+ggtsdisplay(mcopper, main="Monthly copper prices. Copper, grade A, electrolytic wire bars/cathodes, \nLME,cash (pounds/ton)")
+```
+
+- The plot shows a slight seasonality variation with ups and downs over the years. The PACF has a statiscally significant lag1. Thus, it is a non-stationary time series.
+
+- The number of differencing required is 1 by using the function `ndiffs` below
+
+- The number of seasonal differencing required is 0 by using the function `nsdiffs` below.
+
+- Then we can plot the stationary data after differencing the original data once.
+
+```{r, message=FALSE, warning=FALSE}
+mcopper_boxcox <- BoxCox(mcopper, lambda=BoxCox.lambda(mcopper))
+ndiffs(mcopper_boxcox)
+nsdiffs(mcopper_boxcox)
+
+mcopper_boxcox_diff <- diff(mcopper_boxcox)
+ggtsdisplay(mcopper_boxcox_diff, main="mcopper with boxcox and differencing")
+```
+
+- To verify, the test statistic is much bigger than 1% critical value at first, indicating that the null hypothesis is rejected and the data are not stationary.  After differencing the data, reapplying the test gives a tiny test statistic which well within the range. We would expect for stationary data after differencing the data once.
+
+```{r, message=FALSE, warning=FALSE}
+mcopper_boxcox %>% ur.kpss() %>% summary()
+mcopper_boxcox %>% diff() %>% ur.kpss() %>% summary()
+```
+
+### Part d
+
+**enplanements**
+
+Answer:
+
+```{r, message=FALSE, warning=FALSE}
+ggtsdisplay(enplanements, main="Domestic Revenue Enplanements (millions): 1996-2000.")
+```
+
+- The plot shows an obvious seasonality variation with an increasing trend and an unusual drop after year 2000. Thus, it is a non-stationary time series.
+
+- The number of differencing required is 1 by using the function `ndiffs` below.
+
+- The number of seasonal differencing required is 1 by using the function `nsdiffs` below.
+
+- Then we can plot the stationary data after differencing the original data once and seasonal differencing once.
+
+```{r, message=FALSE, warning=FALSE}
+enplanements_boxcox <- BoxCox(enplanements, lambda=BoxCox.lambda(enplanements))
+ndiffs(enplanements_boxcox)
+nsdiffs(enplanements_boxcox)
+
+enplanements_boxcox_diff <- enplanements_boxcox %>% 
+  diff(lag=12) %>%  #seasonal differencing
+  diff()            #regular differencing
+ggtsdisplay(enplanements_boxcox_diff, main="enplanements with boxcox, differencing, and seasonal differencing")
+```
+
+- To verify, the test statistic is much bigger than 1% critical value at first, indicating that the null hypothesis is rejected and the data are not stationary.  After differencing the data, reapplying the test gives a tiny test statistic which well within the range. We would expect for stationary data after differencing the data once and seasonal differencing once.
+
+```{r, message=FALSE, warning=FALSE}
+enplanements_boxcox %>% ur.kpss() %>% summary()
+enplanements_boxcox %>% diff(lag=12) %>% diff() %>% ur.kpss() %>% summary()
+```
+
+### Part e
+
+**visitors**
+
+Answer:
+
+```{r, message=FALSE, warning=FALSE}
+ggtsdisplay(visitors, main="Monthly Australian short-term overseas vistors. May 1985-April 2005")
+```
+
+- The plot shows an obvious seasonality variation with an increasing trend. Thus, it is a non-stationary time series.
+
+- The number of differencing required is 1 by using the function `ndiffs` below.
+
+- The number of seasonal differencing required is 1 by using the function `nsdiffs` below.
+
+- Then we can plot the stationary data after differencing the original data once and with seasonal differencing once.
+
+```{r, message=FALSE, warning=FALSE}
+visitors_boxcox <- BoxCox(visitors, lambda=BoxCox.lambda(visitors))
+ndiffs(visitors_boxcox)
+nsdiffs(visitors_boxcox)
+
+visitors_boxcox_diff <- visitors_boxcox %>% 
+  diff(lag=12) %>%  #seasonal differencing
+  diff()            #regular differencing
+ggtsdisplay(visitors_boxcox_diff, main="visitors with boxcox and differencing")
+```
+
+- To verify, the test statistic is much bigger than 1% critical value at first, indicating that the null hypothesis is rejected and the data are not stationary.  After differencing the data, reapplying the test gives a tiny test statistic which well within the range. We would expect for stationary data after differencing the data once and seasonal differencing once.
+
+```{r, message=FALSE, warning=FALSE}
+visitors_boxcox %>% ur.kpss() %>% summary()
+visitors_boxcox %>% diff(lag=12) %>% diff() %>% ur.kpss() %>% summary()
+```
+
+
+## Ex. 8.5
+For your retail data (from Exercise 3 in Section 2.10), find the appropriate order of differencing (after transformation if necessary) to obtain stationary data.
+
+### Part a
+
+****
+
+Answer:
+
+```{r, message=FALSE, warning=FALSE}
+retail <- import("https://raw.githubusercontent.com/shirley-wong/Data-624/main/HW1/retail.xlsx",
+                             skip=1) #this excel sheet has two header rows
+myts <- ts(retail[,"A3349746K"], frequency=12, start=c(1982,4))
+ggtsdisplay(myts, main="Turnover-Western Australia-Total(Industry) Time Series", xlab="Year", ylab="Sales")
+```
+
+- The plot shows an obvious seasonality variation with an increasing trend. Thus, it is a non-stationary time series.
+
+- The number of differencing required is 1 by using the function `ndiffs` below.
+
+- The number of seasonal differencing required is 1 by using the function `nsdiffs` below.
+
+- Then we can plot the stationary data after differencing the original data once and with seasonal differencing once.
+
+```{r, message=FALSE, warning=FALSE}
+myts_boxcox <- BoxCox(myts, lambda=BoxCox.lambda(myts))
+ndiffs(myts_boxcox)
+nsdiffs(myts_boxcox)
+
+myts_boxcox_diff <- visitors_boxcox %>% 
+  diff(lag=12) %>%  #seasonal differencing
+  diff()            #regular differencing
+ggtsdisplay(myts_boxcox_diff, main="myts with boxcox and differencing")
+```
+
+- To verify, the test statistic is much bigger than 1% critical value at first, indicating that the null hypothesis is rejected and the data are not stationary.  After differencing the data, reapplying the test gives a tiny test statistic which well within the range. We would expect for stationary data after differencing the data once and seasonal differencing once.
+
+```{r, message=FALSE, warning=FALSE}
+myts_boxcox %>% ur.kpss() %>% summary()
+myts_boxcox %>% diff(lag=12) %>% diff() %>% ur.kpss() %>% summary()
+```
+
+
+## Ex. 8.6
+Use R to simulate and plot some data from simple ARIMA models.
+
+(a.) Use the following R code to generate data from an AR(1) model with $\phi_{1}=0.6$ and $\sigma^{2}=1$. The process starts with $y_{1}=0$.
+
+(b.) Produce a time plot for the series. How does the plot change as you change $\phi_{1}$?
+
+(c.) Write your own code to generate data from an MA(1) model with $\theta_{1}=0.6$ and $\sigma^{2}=1$.
+
+(d.) Produce a time plot for the series. How does the plot change as you change $\theta_{1}$?
+
+(e.) Generate data from an ARMA(1,1) model with $\phi_{1}=0.6$, $\theta_{1}=0.6$ and $\sigma^{2}=1$.
+
+(f.) Generate data from an AR(2) model with $\phi_{1}=-0.8$, $\phi_{2}=0.3$ and $\sigma^{2}=1$. (Note that these parameters will give a non-stationary series.)
+
+(g.) Graph the latter two series and compare them.
+
+### Part a
+
+**Use the following R code to generate data from an AR(1) model with $\phi_{1}=0.6$ and $\sigma^{2}=1$. The process starts with $y_{1}=0$.**
+
+Answer:
+
+- AR(1) by definition is an autoregressive model of order 1.  AR(t) can be written as below where $\varepsilon_{t}$ is white noise.
+
+$$y_{t} = c + \phi_{1}y_{t-1} + \phi_{2}y_{t-2} + \cdots + \phi_{p}y_{t-p} + \varepsilon_{t}$$
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(3)
+y <- ts(numeric(100))
+e <- rnorm(100)
+for (i in 2:100)
+  y[i] <- 0.6*y[i-1]+e[i]
+```
+
+### Part b
+
+**Produce a time plot for the series. How does the plot change as you change $\phi_{1}$?**
+
+Answer:
+
+- For an AR(1) model: $-1 < \phi_{1} < 1$
+
+- When $\phi_{1} < 0$, $y_{t}$ tends to oscillate between positive and negative values rapidly.
+
+- When $\phi_{1} = 0$, $y_{t}$ is equivalent to white noise.
+
+- When $\phi_{1} = 1$ and $c = 0$, $y_{t}$ is equivalent to a random walk.
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(3)
+phi = c(-0.75, 0, 0.75)
+for (x in 1:3){
+  y <- ts(numeric(100))
+  e <- rnorm(100)
+  for (i in 2:100)
+    y[i] <- phi[x]*y[i-1]+e[i]
+  ggtsdisplay(y, main = paste("AR(1) with phi =",phi[x]))
+}
+```
+
+
+### Part c
+
+**Write your own code to generate data from an MA(1) model with $\theta_{1}=0.6$ and $\sigma^{2}=1$.**
+
+Answer:
+
+- MA(1) by definition is a moving average model of order 1.  MA(t) can be written as below where $\varepsilon_{t}$ is white noise.
+
+$$y_{t} = c + \theta_{1}\varepsilon_{t-1} + \theta_{2}\varepsilon_{t-2} + \cdots + \theta_{q}\varepsilon_{t-q} + \varepsilon_{t}$$
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(3)
+ma1 <- function(theta=0.6, sd=1, n=100){
+  y <- ts(numeric(n))
+  e <- rnorm(n, sd)
+  for (i in 2:n)
+    y[i] <- theta*e[i-1]+e[i]
+  return(y)
+}
+ggtsdisplay(y, main = "MA(1) with theta = 0.6, sigma^2 = 1")
+```
+
+### Part d
+
+**Produce a time plot for the series. How does the plot change as you change $\theta_{1}$?**
+
+Answer:
+
+- For an MA(1) model: $-1 < \theta_{1} < 1$
+
+- When $\left | \theta \right | > 1$, the weights of the recent lags increase as lags increase, so the more distant the observations the greater their influence on the current error.
+
+- When $\left | \theta \right | = 1$,  the weights are constant in size, and the distant observations have the same influence as the recent observations.
+
+- So when $\left | \theta \right | < 1$, the most recent observations have higher weight than observations from the more distant past. The process is invertible when $\left | \theta \right | < 1$.
+
+- $\therefore$ When $\left | \theta \right | \neq 0$, $y_{t}$ tends to oscillate between positive and negative values.
+
+- $\therefore$ When $\left | \theta \right | = 0$, $y_{t}$ equivalent to white noise.
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(3)
+theta = c(-0.75, 0, 0.75)
+for (x in 1:3){
+  y = ma1(theta[x], sd=1, n=100)
+  ggtsdisplay(y, main = paste("MA(1) with theta =",theta[x]))
+}
+```
+
+
+### Part e
+
+**Generate data from an ARMA(1,1) model with $\phi_{1}=0.6$, $\theta_{1}=0.6$ and $\sigma^{2}=1$.**
+
+Answer:
+
+- ARMA by definition is a AutoRegressive Integrated Moving Average model. The full model can be written as below where $y_{t}^{'}$ is the differenced series. We call this an ARIMA(p,d,q) model where p is order of the autoregressive part, d is degree of first differencing involved, and q is order of the moving average part.
+
+$$y_{t}^{'} = c + \phi_{1}y_{t-1}^{'} + \cdots + \phi_{p}y_{t-p}^{'} + \theta_{1}\varepsilon_{t-1} + \cdots + \theta_{q}\varepsilon_{t-q} + \varepsilon_{t}$$
+
+- Given $\left | \phi_{1} \right |=0.6 < 1$ and $\left | \theta_{1} \right |=0.6 < 1$, this process is stationary and invertible.
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(3)
+phi=0.6
+theta=0.6
+sd=1
+n=100
+y_6e <- ts(numeric(n))
+e <- rnorm(n, sd)
+for (i in 2:n)
+  y_6e[i] <- phi*y_6e[i-1] + theta*e[i-1]+e[i]
+
+ggtsdisplay(y_6e, main = "ARMA(1,1) with phi=0.6, theta=0.6, sigma^2=1")
+```
+
+
+### Part f
+
+**Generate data from an AR(2) model with $\phi_{1}=-0.8$, $\phi_{2}=0.3$ and $\sigma^{2}=1$. (Note that these parameters will give a non-stationary series.)**
+
+Answer:
+
+- For a stationary AR(2) model: $-1 < \phi_{2} < 1$, $\phi_{1} + \phi_{2} < 1$, $\phi_{2} - \phi_{1} < 1$
+
+- The given parameters produce a non-stationary series as $\phi_{2} - \phi_{1} = 0.3 - (-0.8) > 1$.
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(3)
+phi1 = -0.8
+phi2 = 0.3
+sd=1
+n=100
+y_6f <- ts(numeric(n))
+e <- rnorm(n, sd)
+for (i in 3:n)
+  y_6f[i] <- phi1*y_6f[i-1] + phi2*y_6f[i-2] + e[i]
+
+ggtsdisplay(y_6f, main = "AR(2) with phi1=-0.8, phi2=0.3, sigma^2=1")
+```
+
+
+### Part g
+
+**Graph the latter two series and compare them.**
+
+Answer:
+
+- Data from ARMA(1,1) is stationary and invertible.
+
+- Data from AR(2) model increased with oscillation and is non-stationary as the given parameters do not satisfy the stationary constraints: $\phi_{2}-\phi_{1}=0.3-(-0.8)>1$.
+
+```{r, message=FALSE, warning=FALSE}
+ggtsdisplay(y_6e, main = "ARMA(1,1) with phi=0.6, theta=0.6, sigma^2=1")
+ggtsdisplay(y_6f, main = "AR(2) with phi1=-0.8, phi2=0.3, sigma^2=1")
+```
+
+
+## Ex. 8.7
+Consider `wmurders` , the number of women murdered each year (per 100,000 standard population) in the United States.
+
+(a.) By studying appropriate graphs of the series in R, find an appropriate `ARIMA(p,d,q)` model for these data.
+
+(b.) Should you include a constant in the model? Explain.
+
+(c.) Write this model in terms of the backshift operator.
+
+(d.) Fit the model using R and examine the residuals. Is the model satisfactory?
+
+(e.) Forecast three times ahead. Check your forecasts by hand to make sure that you know how they have been calculated.
+
+(f.) Create a plot of the series with forecasts and prediction intervals for the next three periods shown.
+
+(g.) Does `auto.arima()` give the same model you have chosen? If not, which model do you think is better?
+
+### Part a
+
+**By studying appropriate graphs of the series in R, find an appropriate `ARIMA(p,d,q)` model for these data.**
+
+Answer:
+
+```{r, message=FALSE, warning=FALSE}
+ggtsdisplay(wmurders, main="Annual female murder rate (per 100k standard population) in the USA. 1950-2004.")
+```
+
+- The plot has an increasing trend from 1950 to 1975 and decreasing trend from 1990 to 2004. The PACF has a statiscally significant lag1 while others are not. Thus, it is a non-stationary time series. As there are no seasonality components, Box-Cox tranformation is not required here.
+
+- The number of differencing required is 2 by using the function `ndiffs` below.
+
+- Then we can plot the stationary data after differencing the original data once and with seasonal differencing once.
+
+```{r, message=FALSE, warning=FALSE}
+ndiffs(wmurders)
+
+wmurders_diff <- diff(diff(wmurders))
+ggtsdisplay(wmurders_diff, main="wmurders with differencing twice")
+```
+
+- To verify, the test statistic is much bigger than 1% critical value at first, indicating that the null hypothesis is rejected and the data are not stationary.  After differencing the data, reapplying the test gives a tiny test statistic which well within the range. We would expect for stationary data after differencing the data twice.
+
+```{r, message=FALSE, warning=FALSE}
+wmurders %>% ur.kpss() %>% summary()
+wmurders_diff %>% diff() %>% diff() %>% ur.kpss() %>% summary()
+```
+
+- An ARIMA(p,d,q) model has p as order of the autoregressive part, d as degree of first differencing involved, and q as order of the moving average part.
+
+- By looking at the graphs, the PACF plot has a statiscally significant spike at lag1 but none beyond lag1, which suggests p=1.
+
+- The ACF plot shows a negatively significant spike at lag1 and a positively significant spike at lag2, suggesting q=2.
+
+- Therefore, an appropriate ARIMA model for these data would be ARIMA(1,2,2)
+
+### Part b
+
+**Should you include a constant in the model? Explain.**
+
+Answer:
+
+- We have d=2.
+
+- When d=2, if $c=0$, the long-term forecasts will follow a straight line. 
+
+- When d=2, if $c\neq0$, the long-term forecasts will follow a quadratic trend.
+
+- A quadratic trend is not what we want to see, therefore I would not include a constant in the model, i.e. $c=0$.
+
+
+### Part c
+
+**Write this model in terms of the backshift operator.**
+
+Answer:
+
+- According to the textbook Sec 8.2 and Sec 8.8, ARIMA(1,2,2) can be written as follows:
+
+$$(1-\hat{\phi}_{1}B)(1-B)^{2}y_{t} = (1+\hat{\theta}_{1}B+\hat{\theta}_{2}B^{2})\varepsilon_{t}$$
+
+- where *d*th-order difference is represented by $(1-B)^{d}$ and $By_{t}=y_{t-1}$
+
+
+### Part d
+
+**Fit the model using R and examine the residuals. Is the model satisfactory?**
+
+Answer:
+
+- The ACF plot of the residuals shows that all autocorrelations are within the threshold limits, indicating that the residuals are behaving like white noise. 
+
+- The histogram is nearly normal with mean at nearly zero.
+
+- The portmanteau test (Ljung-Box test) returns a large p-value (0.2111 > 0.05), which suggest that the residuals are white noise.
+
+- The model is satisfactory.
+
+- Obtaining the coefficients from the fit, we have the model:
+
+$$(1+0.7677B)(1-B)^{2}y_{t} = (1-0.2812B-0.4977B^{2})\varepsilon_{t}$$
+
+```{r, message=FALSE, warning=FALSE}
+(fit <- Arima(wmurders, order=c(1,2,2)))
+checkresiduals(fit)
+```
+
+### Part e
+
+**Forecast three times ahead. Check your forecasts by hand to make sure that you know how they have been calculated.**
+
+Answer:
+
+- By R:
+
+```{r, message=FALSE, warning=FALSE}
+forecast(fit, h=3)
+```
+
+- By hand:
+
+
+$$(1-\hat{\phi}_{1}B)(1-B)^{2}y_{t} = (1+\hat{\theta}_{1}B+\hat{\theta}_{2}B^{2})\varepsilon_{t}$$
+
+
+$$(1-\hat{\phi}_{1}B)(1-2B+B^{2})y_{t} = (1+\hat{\theta}_{1}B+\hat{\theta}_{2}B^{2})\varepsilon_{t}$$
+
+$$(1-(2+\hat{\phi}_{1})B + (2\hat{\phi}_{1}+1)B^{2} - \hat{\phi}_{1}B^{3}) y_{t} = (1+\hat{\theta}_{1}B+\hat{\theta}_{2}B^{2})\varepsilon_{t}$$
+
+$$y_{t}-(2+\hat{\phi}_{1})y_{t-1} + (2\hat{\phi}_{1}+1)y_{t-2} - \hat{\phi}_{1}y_{t-3} = \varepsilon_{t}+\hat{\theta}_{1}\varepsilon_{t-1}+\hat{\theta}_{2}\varepsilon_{t-2}$$
+
+$$y_{t} = (2+\hat{\phi}_{1})y_{t-1} - (2\hat{\phi}_{1}+1)y_{t-2} + \hat{\phi}_{1}y_{t-3} + \varepsilon_{t}+\hat{\theta}_{1}\varepsilon_{t-1}+\hat{\theta}_{2}\varepsilon_{t-2}$$
+
+$$y_{t} = 1.2323y_{t-1} + 0.5354y_{t-2} - 0.7677y_{t-3} + \varepsilon_{t} - 0.2812\varepsilon_{t-1} - 0.4977\varepsilon_{t-2}$$
+
+```{r, message=FALSE, warning=FALSE}
+t = length(wmurders)
+e = fit$residuals
+fc1 <- (1.2323)*wmurders[t] + 0.5354*wmurders[t-1] - 0.7677*wmurders[t-2] - 0.2812*e[t] - 0.4977*e[t-1]
+fc2 <- (1.2323)*fc1 + 0.5354*wmurders[t] - 0.7677*wmurders[t-1] - 0.2812*0 - 0.4977*e[t]
+fc3 <- (1.2323)*fc2 + 0.5354*fc1 - 0.7677*wmurders[t] - 0.2812*0 - 0.4977*0
+paste("The forecast for the coming three years are: ", fc1, ", ", fc2, ", ", fc3)
+```
+
+- The differences between the results by R and by hand are less than 0.0001.
+
+### Part f
+
+**Create a plot of the series with forecasts and prediction intervals for the next three periods shown.**
+
+Answer:
+
+```{r, message=FALSE, warning=FALSE}
+autoplot(forecast(fit, h=3), PI=TRUE)
+```
+
+
+### Part g
+
+**Does `auto.arima()` give the same model you have chosen? If not, which model do you think is better?**
+
+Answer:
+
+- The `auto.arima()` function suggests ARIMA(1,2,1) model, which is different from the ARIMA(1,2,2) model I have chosen above.
+
+- The model ARIMA(1,2,2) is better. ARIMA(1,2,2) has smaller RMSE and all other error statistics although the differences between the two sets are very small.
+
+```{r, message=FALSE, warning=FALSE}
+(fit <- Arima(wmurders, order=c(1,2,2)))
+accuracy(fit)
+(fit_auto <- auto.arima(wmurders))
+accuracy(fit_auto)
+```
