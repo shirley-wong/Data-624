@@ -39,6 +39,7 @@ library(urca)
 library(rio)
 library(gridExtra)
 library(forecast)
+library(lubridate)
 ```
 
 # Project#1
@@ -223,7 +224,6 @@ ggsubseriesplot(atm2)
 
 atm2_bc <- BoxCox(atm2, lambda = BoxCox.lambda(atm2))
 ggtsdisplay(atm2_bc, main="ATM2 with BoxCox Transformation")
-ndiffs(atm2_bc)
 ```
 
 After applying Box-Cox transformation, we still see the weekly seasonality in the timeseries. Differencing is needed.
@@ -303,7 +303,7 @@ After applying Box-Cox transformation, we still see the weekly seasonality in th
 
 ```{r, message=FALSE, warning=FALSE}
 ggtsdisplay(diff(atm4_bc, 7), points=FALSE)
-atm4_bc %>% ur.kpss() %>% summary()
+atm4_bc %>% diff() %>% ur.kpss() %>% summary()
 ```
 
 The timeseries now appears to be stationary. 
@@ -364,6 +364,9 @@ gridExtra::grid.arrange(
 
 export <- rbind(atm1_f$mean, atm2_f$mean, atm3_f$mean, atm4_f$mean)
 write.csv(export, "ATM624Forecast.csv")
+
+data.frame(export) %>% cbind(ATM = c('ATM1', 'ATM2', 'ATM3', 'ATM4')) %>% 
+                    select(ATM, everything())
 ```
 
 
@@ -427,7 +430,6 @@ After differencing once, the timeseries now appears to be stationary.
 
 
 ```{r, message=FALSE, warning=FALSE}
-ndiffs(kwh_ts)
 ggtsdisplay(diff(kwh_ts,12), points=FALSE)
 kwh_ts %>% diff(.,12) %>% ur.kpss() %>% summary()
 ```
@@ -479,18 +481,128 @@ Part C consists of two data sets.  These are simple 2 columns sets, however they
 
 ## Load Data
 
+```{r, message=FALSE, warning=FALSE}
+wfp1 <- import("https://raw.githubusercontent.com/shirley-wong/Data-624/main/Project1/Waterflow_Pipe1.xlsx", col_types = c("date", "numeric"))
+wfp2 <- import("https://raw.githubusercontent.com/shirley-wong/Data-624/main/Project1/Waterflow_Pipe2.xlsx", col_types = c("date", "numeric"))
+colnames(wfp1) <- c("DateTime", "WaterFlow") 
+colnames(wfp2) <- c("DateTime", "WaterFlow") 
+```
 
 
+```{r, message=FALSE, warning=FALSE}
+wfp1 <- wfp1 %>% mutate(Date = as.Date(DateTime), Time = hour(DateTime)+1) %>% #match the hour with wfp2
+                  group_by(Date, Time) %>%
+                  summarise(Water=mean(WaterFlow)) %>%
+                  ungroup() %>%
+                  mutate(DateTime=ymd_h(paste(Date,Time))) %>%
+                  select(DateTime,Water)
+wfp1
+wfp2 <- wfp2 %>% mutate(Date = as.Date(DateTime), Time = hour(DateTime)) %>%
+                  group_by(Date, Time) %>%
+                  summarise(Water=mean(WaterFlow)) %>%
+                  ungroup() %>%
+                  mutate(DateTime=ymd_h(paste(Date,Time))) %>%
+                  select(DateTime, Water)
+wfp2
+```
 
 
+## Timeseries
+
+Combining the two waterflows into one:
+
+```{r, message=FALSE, warning=FALSE}
+water <- full_join(wfp1, wfp2, by="DateTime", suffix=c("_1", "_2")) %>%
+  mutate(Water_1=ifelse(is.na(Water_1), 0, Water_1)) %>%
+  mutate(Water_2=ifelse(is.na(Water_2), 0, Water_2)) %>%
+  mutate(Water = Water_1 + Water_2) %>%
+  select(DateTime, Water)
+water
+```
 
 
+```{r, message=FALSE, warning=FALSE}
+water_ts <- ts(water$Water, frequency=24)
+ggseasonplot(water_ts) + theme(legend.title = element_blank())
+ggsubseriesplot(water_ts)
+ggtsdisplay(water_ts, main="Daily Waterflow")
+```
+
+## ARIMA Model
+
+We cannot see significant seasonality involved in `water_ts` however there is a slightly decreasing trend. 
+
+It is a non-stationary timeseries. 
+
+```{r, message=FALSE, warning=FALSE}
+water_bc <- BoxCox(water_ts, lambda = BoxCox.lambda(water_ts))
+ggtsdisplay(water_bc, main="water_ts with BoxCox Transformation")
+```
+
+Trend differencing is needed.
+
+```{r, message=FALSE, warning=FALSE}
+ndiffs(water_ts)
+nsdiffs(water_ts)
+ggtsdisplay(diff(water_bc), points=FALSE, main="Differenced water_ts with BoxCox Transformation")
+water_bc %>% diff() %>% ur.kpss() %>% summary()
+```
+
+The timeseries now appears to be stationary. 
+
+One seasonal differencing was applied so D=0, while the non-seasonal part suggests d=1. 
+
+There is one seasonal lags in ACF, suggest Q=1.
+
+There one non-seasonal spike at lag1 in ACF suggest q=1.
+
+Thus, I will try ARIMA(0,1,1)(0,0,1)[24].
 
 
+```{r, message=FALSE, warning=FALSE}
+water_arima <- Arima(water_ts, order=c(0,1,1), seasonal=c(0,0,1), lambda = BoxCox.lambda(water_ts))
+summary(water_arima)
+checkresiduals(water_arima)
+```
+
+```{r, message=FALSE, warning=FALSE}
+water_auto <- auto.arima(water_ts, approximation = FALSE, lambda=BoxCox.lambda(water_ts))
+summary(water_auto)
+checkresiduals(water_auto)
+```
+
+The ARIMA model found by `auto.arima` is ARIMA(0,1,1)(1,0,0)[24].
+
+The ARIMA model I suggested is ARIMA(0,1,1)(0,0,1)[24].
+
+The two models are very close to each other on the statistics with only 0.01 difference on AICc.
+
+I will choose the auto.arima model for this timeseries.  
+
+```{r, message=FALSE, warning=FALSE}
+water_model <- Arima(atm4, order=c(0,1,1), seasonal=c(1,0,0), lambda = BoxCox.lambda(water_ts))
+```
 
 
+## Forecast
 
+Forecast a week on the water usage, which is $7*24$ hours.
 
+The timeseries is lack of seasonality which caused zero variation in the long term forecast.
+
+```{r, message=FALSE, warning=FALSE}
+water_f <- forecast(water_model, h=7*24, level=95)
+
+autoplot(water_f) +
+  labs(title="Water Usage Forecast: ARIMA(0,1,1)(1,0,0)[24]", x="Day")
+
+export <- water_f$mean
+write.csv(export, "Waterflow624Forecast.csv")
+
+df <- data.frame(water_f) %>% select(Point.Forecast)
+rownames(df) <- NULL
+df
+```
 
 
 
