@@ -1,0 +1,509 @@
+---
+title: "Data 624 Project 1"
+author: "Sin Ying Wong"
+date: "04/11/2021"
+output:
+  rmdformats::readthedown:
+    code_folding: show
+    df_print: paged
+    highlight: tango
+    number_sections: yes
+    smooth_scroll: yes
+    theme: united
+    toc_collapsed: yes
+    toc_depth: 5
+    toc_float: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_collapsed: yes
+    toc_float: yes
+  html_notebook: default
+  pdf_document:
+    extra_dependencies:
+    - geometry
+    - multicol
+    - multirow
+  word_document:
+    toc: yes
+    toc_depth: '5'
+theme: lumen
+number_sections: yes
+toc_depth: 3
+---
+
+```{r library, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(fpp2)
+library(urca)
+library(rio)
+library(gridExtra)
+library(forecast)
+```
+
+# Project#1
+
+This project consists of 3 parts - two required and one bonus and is worth 15% of your grade.
+
+**Part A – ATM Forecast, ATM624Data.xlsx**
+
+In part A, I want you to forecast how much cash is taken out of 4 different ATM machines for May 2010.  The data is given in a single file.  The variable `Cash` is provided in hundreds of dollars, other than that it is straight forward.   I am being somewhat ambiguous on purpose to make this have a little more business feeling.  Explain and demonstrate your process, techniques used and not used, and your actual forecast.  I am giving you data via an excel file, please provide your written report on your findings, visuals, discussion and your R code via an RPubs link along with the actual.rmd file  Also please submit the forecast which you will put in an Excel readable file.
+
+
+**Part B – Forecasting Power, ResidentialCustomerForecastLoad-624.xlsx**
+
+Part B consists of a simple dataset of residential power usage for January 1998 until December 2013.  Your assignment is to model these data and a monthly forecast for 2014.  The data is given in a single file.  The variable ‘KWH’ is power consumption in Kilowatt hours, the rest is straight forward.    Add this to your existing files above. 
+
+
+**Part C – BONUS, optional (part or all), Waterflow_Pipe1.xlsx and Waterflow_Pipe2.xlsx**
+
+Part C consists of two data sets.  These are simple 2 columns sets, however they have different time stamps.  Your optional assignment is to time-base sequence the data and aggregate based on hour (example of what this looks like, follows).  Note for multiple recordings within an hour, take the mean.  Then to determine if the data is stationary and can it be forecast.  If so, provide a week forward forecast and present results via Rpubs and .rmd and the forecast in an Excel readable file.  
+
+# Libraries
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(kableExtra)
+library(gridExtra)
+library(fpp2)
+library(rio)
+```
+
+# Part A
+
+**Part A – ATM Forecast, ATM624Data.xlsx**
+
+## Load Data
+
+First, load the excel data, clean it by dropping the NA values, and rearrange it to a better format.
+
+```{r, message=FALSE, warning=FALSE}
+atm <- import("https://raw.githubusercontent.com/shirley-wong/Data-624/main/Project1/ATM624Data.xlsx", col_types = c("date", "text", "numeric"))
+atm #original data
+atm_daily <- atm %>% drop_na() %>% spread(ATM, Cash) 
+atm_daily #daily total after dropping NA values
+```
+
+From the table above, we can see that the cash withdrawal from ATM4 are generally larger than the other 3 ATMs, and that of ATM3 are mostly zero. Let's look closely with their summary statistics and boxplots.
+
+- There are 3 NA values in ATM1 and 2 in ATM2.
+
+- There are only 3 datapoints in ATM3.
+
+- There are many outliers in ATM1 and one extremely high outlier in ATM4. 
+
+```{r, message=FALSE, warning=FALSE}
+par(mfrow=c(4,1))
+for (i in 2:5) {
+  print(summary(atm_daily[i]))
+  boxplot(atm_daily[i], horizontal = TRUE)
+}
+```
+
+## Timeseries
+
+Next, convert the data into a timeseries and plot it.
+
+As the spike from ATM4 in the first plot makes it hard to see the details in ATM1, ATM2, and ATM3, individual plots will be shown below.
+
+```{r, message=FALSE, warning=FALSE}
+atm_ts <- ts(atm_daily %>% select(-DATE))
+autoplot(atm_ts) +
+  ggtitle("Daily Cash Withdrawal from 4 ATM Machines") +
+  xlab("Day") +
+  ylab("Hundreds of Dollars ($100)")
+```
+
+To handle the data better, the extremely high outlier in ATM4 will be replaced by median for better forecasting.
+
+```{r, message=FALSE, warning=FALSE}
+atm[1394,3] <- 403.839
+atm %>% drop_na() %>% ggplot(aes(x=DATE, y=Cash, col=ATM)) +
+  geom_line(show.legend = FALSE) +
+  facet_wrap(~ATM, ncol=1, scales="free_y") +
+  labs(title="Daily Cash Withdrawal from 4 ATM Machines (May 2019 to April 2020)") +
+  xlab("Date") + ylab("Hundreds of Dollars ($100)")
+```
+
+From the above plots:
+
+- Seasonality is seen in ATM1 and ATM2, will apply Box-Cox transformation.
+
+- Only 3 datapoints in ATM3 and all before them are 0, we may not have enough information for prediction. This may happen if the ATM3 launched only 3 days before end of April 2020.
+
+- Replacing the outlier with median makes the ATM4 better to forecast.
+
+
+## ARIMA Models
+
+### ATM1
+
+From the timeseries plot, ATM1 is clearly with seasonality, which is weekly seasonality. 
+
+The ACF and PACF plots have significant lag7, lag14, and lag21.
+
+Thus, this is a non-stationary timeseries. 
+
+```{r, message=FALSE, warning=FALSE}
+atm1 <- atm_daily[2]
+atm1 <- ts(atm1, frequency=7)
+atm2 <- atm_daily[3]
+atm2 <- ts(atm2, frequency=7)
+atm3 <- atm_daily[4]
+atm3 <- ts(atm3, start=363)
+atm3[which(atm3==0)] <- NA
+atm4 <- atm_daily[5]
+atm4[285,] <- 403.839
+atm4 <- ts(atm4, frequency=7)
+```
+
+```{r, message=FALSE, warning=FALSE}
+ggtsdisplay(atm1, main="Daily Cash Withdrawal in ATM1 (May 2019 - April 2020)")
+ggseasonplot(atm1)
+ggsubseriesplot(atm1)
+
+atm1_bc <- BoxCox(atm1, lambda = BoxCox.lambda(atm1))
+ggtsdisplay(atm1_bc, main="ATM1 with BoxCox Transformation")
+```
+
+After applying Box-Cox transformation, we still see the weekly seasonality in the timeseries. Differencing is needed.
+
+```{r, message=FALSE, warning=FALSE}
+ggtsdisplay(diff(atm1_bc, 7), points=FALSE)
+atm1_bc %>% diff(.,7) %>% ur.kpss() %>% summary()
+```
+
+The timeseries now appears to be stationary. 
+
+To recall, an ARIMA(p,d,q)(P,D,Q)[m] model has p/P as order of the autoregressive part, d/D as degree of first differencing involved, q/Q as order of the moving average part, and m as number of observations.
+
+The non-seasonal significant lag1 in ACF and PACF suggest non-seasonal p=q=1.
+
+The seasonal spike at lag7 suggest seasonal AR(1) and/or MA(1) components. As ACF decays gradually, this suggests seasonal AR(0) and MA(1), i.e. P=0, Q=1.
+
+Thus, the possible model here I suggest to be ARIMA(1,0,1)(0,1,1).
+
+```{r, message=FALSE, warning=FALSE}
+atm1_arima <- Arima(atm1, order=c(1,0,1), seasonal=c(0,1,1), lambda = BoxCox.lambda(atm1))
+summary(atm1_arima)
+checkresiduals(atm1_arima)
+```
+
+```{r, message=FALSE, warning=FALSE}
+atm1_auto <- auto.arima(atm1, approximation = FALSE, lambda=BoxCox.lambda(atm1))
+summary(atm1_auto)
+checkresiduals(atm1_auto)
+```
+
+The ARIMA model found by `auto.arima` is ARIMA(0,0,2)(0,1,1)[7].
+
+The ARIMA model I suggested is ARIMA(1,0,1)(0,1,1)[7].
+
+According to the error measures and the residual plots, both models represents the data well with similar AIC values, similar error measures, and similar p-values.
+
+Both models worked great but the ARIMA(0,0,2)(0,1,1)[7] has smaller AICc which is better than the model I suggested.
+
+```{r, message=FALSE, warning=FALSE}
+atm1_model <- Arima(atm1, order=c(0,0,2), seasonal=c(0,1,1), lambda = BoxCox.lambda(atm1))
+```
+
+### ATM2
+
+From the timeseries plot, ATM2 is clearly with seasonality, which is weekly seasonality. 
+
+The ACF and PACF plots have significant lag7, lag14, and lag21.
+
+Thus, this is a non-stationary timeseries. 
+
+```{r, message=FALSE, warning=FALSE}
+ggtsdisplay(atm2, main="Daily Cash Withdrawal in ATM2 (May 2019 - April 2020)")
+ggseasonplot(atm2)
+ggsubseriesplot(atm2)
+
+atm2_bc <- BoxCox(atm2, lambda = BoxCox.lambda(atm2))
+ggtsdisplay(atm2_bc, main="ATM2 with BoxCox Transformation")
+ndiffs(atm2_bc)
+```
+
+After applying Box-Cox transformation, we still see the weekly seasonality in the timeseries. Differencing is needed.
+
+```{r, message=FALSE, warning=FALSE}
+ggtsdisplay(diff(atm2_bc, 7), points=FALSE)
+atm2_bc %>% diff(.,7) %>% ur.kpss() %>% summary()
+```
+
+The timeseries now appears to be stationary. 
+
+One seasonal differencing was applied so D=1, while the non-seasonal part suggests d=0. 
+
+The seasonal lags at ACF sudden drops while the ones in PACF gradually decrease, suggest AR(0) and MA(1), so P=0, Q=1.
+
+The non-differenced ACF and PACF plots have spikes at lag2 and lag5, suggest p=2 and q=2.
+
+Thus, the possible model here I suggest to be ARIMA(2,0,2)(0,1,1)[7].
+
+```{r, message=FALSE, warning=FALSE}
+atm2_arima <- Arima(atm2, order=c(2,0,2), seasonal=c(0,1,1), lambda = BoxCox.lambda(atm2))
+summary(atm2_arima)
+checkresiduals(atm2_arima)
+```
+
+```{r, message=FALSE, warning=FALSE}
+atm2_auto <- auto.arima(atm2, approximation = FALSE, lambda=BoxCox.lambda(atm2))
+summary(atm2_auto)
+checkresiduals(atm2_auto)
+```
+
+The ARIMA model found by `auto.arima` is ARIMA(2,0,2)(0,1,1)[7].
+
+The ARIMA model I suggested is ARIMA(2,0,2)(0,1,1)[7].
+
+The two models are the same.
+
+According to the error measures and the residual plots, the model represents the data well with small p-value.  
+
+```{r, message=FALSE, warning=FALSE}
+atm2_model <- Arima(atm2, order=c(2,0,2), seasonal=c(0,1,1), lambda = BoxCox.lambda(atm2))
+```
+
+
+### ATM3
+
+Only 3 datapoints in ATM3 and all before them are 0. This may happen if the ATM3 launched only 3 days before end of April 2020.
+
+Given only 3 datapoints, there is not enough information to forecast on the timeseries. 
+
+Therefore, I will use a simple mean forecast.
+
+```{r, message=FALSE, warning=FALSE}
+ggtsdisplay(atm3, main="Daily Cash Withdrawal in ATM3 (May 2019 - April 2020)")
+```
+
+ 
+
+### ATM4
+
+Let's repeat the steps from ATM1&2 on ATM4. ATM4 also has weekly seasonality. 
+
+The ACF and PACF plots have significant lag7, lag14, and lag21.
+
+Thus, this is a non-stationary timeseries. 
+
+```{r, message=FALSE, warning=FALSE}
+ggtsdisplay(atm4, main="Daily Cash Withdrawal in ATM4 (May 2019 - April 2020)")
+ggseasonplot(atm4)
+ggsubseriesplot(atm4)
+
+atm4_bc <- BoxCox(atm4, lambda = BoxCox.lambda(atm4))
+ggtsdisplay(atm4_bc, main="ATM4 with BoxCox Transformation")
+```
+
+After applying Box-Cox transformation, we still see the weekly seasonality in the timeseries. Differencing is needed.
+
+```{r, message=FALSE, warning=FALSE}
+ggtsdisplay(diff(atm4_bc, 7), points=FALSE)
+atm4_bc %>% ur.kpss() %>% summary()
+```
+
+The timeseries now appears to be stationary. 
+
+One seasonal differencing was applied so D=1, while the non-seasonal part suggests d=0. 
+
+The seasonal lags at ACF sudden drops while the ones in PACF gradually decrease, suggest AR(0) and MA(1), so P=0, Q=1.
+
+There one non-seasonal spike at lag3 in ACF and PACF plots suggest p=q=1.
+
+Thus, I will try ARIMA(1,0,1)(0,1,1)[7].
+
+
+```{r, message=FALSE, warning=FALSE}
+atm4_arima <- Arima(atm4, order=c(1,0,1), seasonal=c(0,1,1), lambda = BoxCox.lambda(atm4))
+summary(atm4_arima)
+checkresiduals(atm4_arima)
+```
+
+```{r, message=FALSE, warning=FALSE}
+atm4_auto <- auto.arima(atm4, approximation = FALSE, lambda=BoxCox.lambda(atm4))
+summary(atm4_auto)
+checkresiduals(atm4_auto)
+```
+
+The ARIMA model found by `auto.arima` is ARIMA(1,0,0)(2,0,0)[7].
+
+The ARIMA model I suggested is ARIMA(1,0,1)(0,1,1)[7].
+
+The model I suggested has smaller AICc and RMSE.
+
+According to the error measures and the residual plots, I will stick to the model I suggested.  
+
+```{r, message=FALSE, warning=FALSE}
+atm4_model <- Arima(atm4, order=c(1,0,1), seasonal=c(0,1,1), lambda = BoxCox.lambda(atm4))
+```
+
+
+## Forecast
+
+```{r, message=FALSE, warning=FALSE}
+atm1_f <- forecast(atm1_model, 31, level=95)
+atm2_f <- forecast(atm2_model, 31, level=95)
+atm3_f <- meanf(atm3, 31, level=95)
+atm4_f <- forecast(atm4_model, 31, level=95)
+
+gridExtra::grid.arrange(
+  autoplot(atm1_f) +
+    labs(title="ATM1: ARIMA(0,0,2)(0,1,1)[7]", x="Day", y="Hundreds of Dollars($100)"),
+  autoplot(atm2_f) +
+    labs(title="ATM2: ARIMA(2,0,2)(0,1,1)[7]", x="Day", y="Hundreds of Dollars($100)"),
+  autoplot(atm3_f) +
+    labs(title="ATM3: meanf", x="Day", y="Hundreds of Dollars($100)"),
+  autoplot(atm4_f) +
+    labs(title="ATM4: ARIMA(1,0,1)(0,1,1)[7]", x="Day", y="Hundreds of Dollars($100)"),
+  top = grid::textGrob("Forecast on Cash Withdrawal for May 2020")
+)
+
+export <- rbind(atm1_f$mean, atm2_f$mean, atm3_f$mean, atm4_f$mean)
+write.csv(export, "ATM624Forecast.csv")
+```
+
+
+
+# Part B
+
+**Part B – Forecasting Power, ResidentialCustomerForecastLoad-624.xlsx**
+
+## Load Data
+
+First, load the excel data into R and clean it by using function `tsclean()` which can handle outliers and NA value.
+
+```{r, message=FALSE, warning=FALSE}
+kwh <- import("https://raw.githubusercontent.com/shirley-wong/Data-624/main/Project1/ResidentialCustomerForecastLoad-624.xlsx")
+kwh #original data
+
+kwh_ts <- ts(kwh[,"KWH"], start=c(1998,1), frequency=12) %>% 
+  tsclean() #handle the outliers and NA value
+kwh_ts #cleaned data
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+summary(kwh[,"KWH"]) #before
+summary(kwh_ts) #after: clear out the outlier "770523" and handled the NA value in 2008 Sep.
+```
+
+
+## Timeseries
+
+Let's study the cleaned timeseries below.
+
+Seasonality is found in this timeseries and appears to have a peak every 6 months. The seasonality may be annual due to the high usage during winter and summer.
+
+```{r, message=FALSE, warning=FALSE}
+autoplot(kwh_ts) +
+  ggtitle("Monthly Residential Power Usage for Jan 1998 to Dec 2013 (KWH)") +
+  xlab("Month") +
+  ylab("Kilowatt hours (KWH)")
+ggseasonplot(kwh_ts)
+ggsubseriesplot(kwh_ts)
+```
+
+
+## ARIMA Model
+
+From the plots below, we see annual seasonality. 
+
+```{r, message=FALSE, warning=FALSE}
+ggtsdisplay(kwh_ts, main="Monthly Residential Power Usage for Jan 1998 to Dec 2013 (KWH)")
+```
+
+Tried Box-Cox transformation on the timeseries but no huge differences on the before and after. Will work on differencing instead.
+
+```{r, message=FALSE, warning=FALSE}
+kwh_bc <- BoxCox(kwh_ts, lambda = BoxCox.lambda(kwh_ts))
+ggtsdisplay(kwh_bc, main="kwh_ts with BoxCox Transformation")
+```
+
+After differencing once, the timeseries now appears to be stationary.
+
+
+```{r, message=FALSE, warning=FALSE}
+ndiffs(kwh_ts)
+ggtsdisplay(diff(kwh_ts,12), points=FALSE)
+kwh_ts %>% diff(.,12) %>% ur.kpss() %>% summary()
+```
+
+To recall, an ARIMA(p,d,q)(P,D,Q)[m] model has p/P as order of the autoregressive part, d/D as degree of first differencing involved, q/Q as order of the moving average part, and m as number of observations.
+
+The non-seasonal significant lag1 in ACF and PACF suggest non-seasonal p=q=1.
+
+The seasonal spike at lag7 in ACF and lag7 & lag14 in PACF suggest seasonal AR(1) and/or MA(2) components. As ACF decays gradually, this suggests seasonal AR(0) and MA(2), i.e. P=0, Q=2.
+
+Thus, the possible model here I suggest to be ARIMA(1,0,1)(0,1,2).
+
+```{r, message=FALSE, warning=FALSE}
+kwh_arima <- Arima(kwh_ts, order=c(1,0,1), seasonal=c(0,1,2), lambda = BoxCox.lambda(kwh_ts))
+summary(kwh_arima)
+checkresiduals(kwh_arima)
+
+kwh_auto <- auto.arima(kwh_ts, approximation = FALSE, lambda=BoxCox.lambda(kwh_ts))
+checkresiduals(kwh_auto)
+summary(kwh_auto)
+```
+
+The ARIMA model found by auto.arima is ARIMA(1,0,0)(0,1,1)[12].
+
+The ARIMA model I suggested is ARIMA(1,0,1)(0,1,2)[12].
+
+According to the error measures and the residual plots, the auto model represents the data better with smaller AICc value and smaller error measures.
+
+Therefore ARIMA(1,0,0)(0,1,1)[12] is better than the model I suggested.
+
+## Forecast
+
+```{r, message=FALSE, warning=FALSE}
+kwh_model <- Arima(kwh_ts, order=c(1,0,0), seasonal=c(0,1,1), lambda = BoxCox.lambda(kwh_ts))
+kwh_f <- forecast(kwh_model, h=12, level=95)
+kwh_f
+autoplot(kwh_f)
+
+export <- kwh_f$mean
+write.csv(export, "kwh624Forecast.csv")
+```
+
+
+# Part C
+
+**Part C – BONUS, optional (part or all), Waterflow_Pipe1.xlsx and Waterflow_Pipe2.xlsx**
+
+Part C consists of two data sets.  These are simple 2 columns sets, however they have different time stamps.  Your optional assignment is to time-base sequence the data and aggregate based on hour (example of what this looks like, follows).  Note for multiple recordings within an hour, take the mean.  Then to determine if the data is stationary and can it be forecast.  If so, provide a week forward forecast and present results via Rpubs and .rmd and the forecast in an Excel readable file.  
+
+## Load Data
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
