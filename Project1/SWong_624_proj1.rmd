@@ -580,7 +580,7 @@ The two models are very close to each other on the statistics with only 0.01 dif
 I will choose the auto.arima model for this timeseries.  
 
 ```{r, message=FALSE, warning=FALSE}
-water_model <- Arima(atm4, order=c(0,1,1), seasonal=c(1,0,0), lambda = BoxCox.lambda(water_ts))
+water_model <- Arima(water_ts, order=c(0,1,1), seasonal=c(1,0,0), lambda = BoxCox.lambda(water_ts))
 ```
 
 
