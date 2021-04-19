@@ -1,0 +1,441 @@
+---
+title: "Data 624 HW7: Linear Regression and Its Cousins"
+author: "Sin Ying Wong"
+date: "04/16/2021"
+output:
+  rmdformats::readthedown:
+    code_folding: show
+    df_print: paged
+    highlight: tango
+    number_sections: yes
+    smooth_scroll: yes
+    theme: united
+    toc_collapsed: yes
+    toc_depth: 5
+    toc_float: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_collapsed: yes
+    toc_float: yes
+  html_notebook: default
+  pdf_document:
+    extra_dependencies:
+    - geometry
+    - multicol
+    - multirow
+  word_document:
+    toc: yes
+    toc_depth: '5'
+theme: lumen
+number_sections: yes
+toc_depth: 3
+---
+
+```{r library, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(fpp2)
+library(urca)
+library(rio)
+library(gridExtra)
+#library(AppliedPredictiveModeling)
+library(caret)
+library(glmnet)
+library(elasticnet)
+library(RANN)
+seed <- 123
+```
+
+# HW7: Linear Regression and Its Cousins
+
+In Kuhn and Johnson do problems 6.2 and 6.3. There are only two but they consist of many parts.  Please submit a link to your Rpubs and submit the .rmd file as well.
+
+## Ex. 6.2
+
+Developing a model to predict permeability (see Sect. 1.4) could save significant resources for a pharmaceutical company, while at the same time more rapidly identifying molecules that have a sufficient permeability to become a drug:
+
+(a.) Start R and use these commands to load the data:
+
+- library(AppliedPredictiveModeling)
+- data(permeability)
+
+The matrix `fingerprints` contains the 1,107 binary molecular predictors for the 165 compounds, while permeability contains permeability response.
+
+(b) The fingerprint predictors indicate the presence or absence of substructures of a molecule and are often sparse meaning that relatively few of the molecules contain each substructure. Filter out the predictors that have low frequencies using the `nearZeroVar` function from the caret package. How many predictors are left for modeling?
+
+(c) Split the data into a training and a test set, pre-process the data, and tune a PLS model. How many latent variables are optimal and what is the corresponding resampled estimate of $R^2$?
+
+(d) Predict the response for the test set. What is the test set estimate of $R^2$?
+
+(e) Try building other models discussed in this chapter. Do any have better predictive performance?
+
+(f) Would you recommend any of your models to replace the permeability laboratory experiment?
+
+### Part a
+
+Start R and use these commands to load the data:
+
+```{r, message=FALSE, warning=FALSE}
+library(AppliedPredictiveModeling)
+data(permeability)
+```
+
+The matrix `fingerprints` contains the 1,107 binary molecular predictors for the 165 compounds, while `permeability` contains permeability response.
+
+### Part b
+
+**The fingerprint predictors indicate the presence or absence of substructures of a molecule and are often sparse meaning that relatively few of the molecules contain each substructure. Filter out the predictors that have low frequencies using the `nearZeroVar` function from the caret package. How many predictors are left for modeling?**
+
+Answer:
+
+- 719 predictors were removed from the 1,107 binary moelecular predictors.
+
+- 388 predictors left.
+
+```{r, message=FALSE, warning=FALSE}
+fp_remove <- nearZeroVar(fingerprints)
+str(fp_remove)
+fp <- fingerprints[,-fp_remove]
+ncol(fingerprints)
+ncol(fp)
+```
+
+### Part c
+
+**Split the data into a training and a test set, pre-process the data, and tune a PLS (Partial Least Square) model. How many latent variables are optimal and what is the corresponding resampled estimate of $R^2$?**
+
+Answer:
+
+1. Train-test split at 70%
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(seed)
+trainingRows <- createDataPartition(permeability, p=0.75, list=FALSE) #caret, textbook sec4.9
+train_X <- fp[trainingRows, ]
+train_Y <- permeability[trainingRows,]
+test_X <- fp[-trainingRows, ]
+test_Y <- permeability[-trainingRows,]
+```
+
+
+2. Create a PLS model
+
+The best performed PLS model generated is selected with the lowest RMSE value.
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(seed)
+pls_1 <- train(x=train_X, y=train_Y, method="pls", tuneLength=20, 
+               preProcess=c("center", "scale"), 
+               trControl=trainControl(method="cv"))
+pls_1
+
+plot(pls_1, main="PLS Model: RMSE vs Components")
+
+
+pls_1$results[pls_1$bestTune$ncomp,]
+```
+
+### Part d
+
+**Predict the response for the test set. What is the test set estimate of $R^2$?**
+
+Answer:
+
+```{r, message=FALSE, warning=FALSE}
+pls_predict <- predict(pls_1, test_X)
+plot(pls_predict, test_Y, main="Observed vs Predicted Permeability of PLS Model",
+     xlab="Predicted Permeability", ylab="Observed Permeability")
+abline(0,1,col="royalblue")
+postResample(pred=pls_predict, obs=test_Y)
+```
+
+
+### Part e
+
+**Try building other models discussed in this chapter. Do any have better predictive performance?**
+
+Answer:
+
+We have learned 3 types of penalized models in chapter 6, ridge regression model, lasso regression model, and elastic net regression model.
+
+#### Ridge Regression
+
+- Ridge regression model
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(seed)
+
+ridge_lambda <- data.frame(.lambda = seq(0, 0.3, length=30))
+ridge_1 <- train(x=train_X, y=train_Y, method="ridge", 
+               tuneGrid=expand.grid(lambda=ridge_lambda), 
+               preProcess=c("center", "scale"),
+               trControl=trainControl(method="cv", number=10))
+ridge_1
+```
+
+The best ridge regression model generated is selected with the lowest RMSE.
+
+```{r, message=FALSE, warning=FALSE}
+plot(ridge_1)
+
+plot(ridge_1, ylim=c(0,50), xlim=c(-0.01,0.31),main="Closer look at the RMSE")
+
+#2nd lambda has the minimum RMSE and maximum R^2
+ridge_1$results[which(ridge_1$results$lambda==ridge_1$bestTune$lambda),]
+```
+
+By predicting the response for the test set, the test set estimate of $R^2$ is shown below.
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(seed)
+ridge_predict <- predict(ridge_1, test_X)
+plot(ridge_predict, test_Y, main="Observed vs Predicted Permeability of Ridge Regression Model",
+     xlab="Predicted Permeability", ylab="Observed Permeability")
+abline(0,1,col="royalblue")
+postResample(pred=ridge_predict, obs=test_Y)
+```
+
+
+#### Lasso Regression
+
+- Lasso regression model
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(seed)
+
+lasso_1 <- train(x=train_X, y=train_Y, method="lasso", 
+               tuneGrid=data.frame(.fraction = seq(0, 0.5, length=50)), 
+               preProcess=c("center", "scale"), metric="RMSE", 
+               trControl=trainControl(method="cv", number=10))
+lasso_1
+```
+
+The best lasso regression model generated is selected with the lowest RMSE value.
+
+```{r, message=FALSE, warning=FALSE}
+plot(lasso_1)
+lasso_1$results[which(lasso_1$results$fraction==lasso_1$bestTune$fraction),]
+```
+
+
+By predicting the response for the test set, the test set estimate of $R^2$ is shown below.
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(seed)
+lasso_predict <- predict(lasso_1, test_X)
+plot(lasso_predict, test_Y, main="Observed vs Predicted Permeability of Lasso Regression Model",
+     xlab="Predicted Permeability", ylab="Observed Permeability")
+abline(0,1,col="royalblue")
+postResample(pred=lasso_predict, obs=test_Y)
+```
+
+
+#### Elastic Net Regression
+
+- Elastic Net Regression model
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(seed)
+
+elastic_1 <- train(x=train_X, y=train_Y, method="enet", 
+               tuneGrid=data.frame(.lambda = seq(0,0.3,length=20), .fraction=seq(0.05,0.5,length=20)), 
+               preProcess=c("center", "scale"), 
+               trControl=trainControl(method="cv", number=10))
+elastic_1
+```
+
+The best elastic net regression model generated is selected with the lowest RMSE value.
+
+```{r, message=FALSE, warning=FALSE}
+elastic_1$results[which(elastic_1$results$fraction==elastic_1$bestTune$fraction),]
+```
+
+
+By predicting the response for the test set, the test set estimate of $R^2$ is shown below.
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(seed)
+elastic_predict <- predict(elastic_1, test_X)
+plot(elastic_predict, test_Y, main="Observed vs Predicted Permeability of Elastic Net Regression Model",
+     xlab="Predicted Permeability", ylab="Observed Permeability")
+abline(0,1,col="royalblue")
+postResample(pred=elastic_predict, obs=test_Y)
+```
+
+
+
+### Part f
+
+**Would you recommend any of your models to replace the permeability laboratory experiment?**
+
+Answer:
+
+- I would replace my model to the elastic net regression model as it has the lowest RMSE value.
+
+```{r, message=FALSE, warning=FALSE}
+#PLS
+print("PLS:")
+postResample(pred=pls_predict, obs=test_Y)
+#Ridge Regression
+print("Ridge Regression:")
+postResample(pred=ridge_predict, obs=test_Y)
+#Lasso Regression
+print("Lasso Regression:")
+postResample(pred=lasso_predict, obs=test_Y)
+#Elastic Net Regression
+print("Elastic Net Regression:")
+postResample(pred=elastic_predict, obs=test_Y)
+```
+
+
+
+## Ex. 6.3
+
+A chemical manufacturing process for a pharmaceutical product was discussed in Sect. 1.4. In this problem, the objective is to understand the relationship between biological measurements of the raw materials (predictors), measurements of the manufacturing process (predictors), and the response of
+product yield. 
+
+Biological predictors cannot be changed but can be used to assess the quality of the raw material before processing. On the other hand, manufacturing process predictors can be changed in the manufacturing process. Improving product yield by 1% will boost revenue by approximately one hundred thousand dollars per batch:
+
+(a.) Start R and use these commands to load the data:
+
+- library(AppliedPredictiveModeling)
+- data(chemicalManufacturing)
+
+The matrix `processPredictors` contains the 57 predictors (12 describing the input biological material and 45 describing the process predictors) for the 176 manufacturing runs. `yield` contains the percent yield for each run.
+
+(b) A small percentage of cells in the predictor set contain missing values. Use an imputation function to fill in these missing values (e.g., see Sect. 3.8).
+
+(c) Split the data into a training and a test set, pre-process the data, and tune a model of your choice from this chapter. What is the optimal value of the performance metric?
+
+(d) Predict the response for the test set. What is the value of the performance metric and how does this compare with the resampled performance metric on the training set?
+
+(e) Which predictors are most important in the model you have trained? Do either the biological or process predictors dominate the list?
+
+(f) Explore the relationships between each of the top predictors and the response. How could this information be helpful in improving yield in future runs of the manufacturing process?
+
+### Part a
+
+Start R and use these commands to load the data:
+
+```{r, message=FALSE, warning=FALSE}
+data(ChemicalManufacturingProcess)
+summary(ChemicalManufacturingProcess)
+```
+
+The matrix `ChemicalManufacturingProcess` contains the 57 predictors (12 describing the input biological material and 45 describing the process predictors) for the 176 manufacturing runs, plus the variable `yield` which contains the percent yield for each run.
+
+### Part b
+
+**A small percentage of cells in the predictor set contain missing values. Use an imputation function to fill in these missing values (e.g., see Sect. 3.8).**
+
+Answer:
+
+- The `caret` class `preProcess` has the ability to transform, center, scale, or impute values, as well as apply the spatial sign transformation and feature extraction.
+
+```{r, message=FALSE, warning=FALSE}
+cmp_predictors <- ChemicalManufacturingProcess[,-c(1)]
+cmp_pre <- preProcess(cmp_predictors, method="knnImpute") #textbook sec3.8
+#apply the transformations
+cmp_predictors <- predict(cmp_pre, cmp_predictors)
+```
+
+### Part c
+
+**Split the data into a training and a test set, pre-process the data, and tune a model of your choice from this chapter. What is the optimal value of the performance metric?**
+
+Answer:
+
+1. Pre-process the data with centering and scaling.
+
+```{r, message=FALSE, warning=FALSE}
+cmp_pre <- preProcess(cmp_predictors, method=c("center", "scale"))
+cmp_predictors <- predict(cmp_pre, cmp_predictors)
+```
+
+2. Train-test split at 70%
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(0)
+trainingRows <- createDataPartition(ChemicalManufacturingProcess$Yield, 
+                                    p=0.70, list=FALSE) #caret, textbook sec4.9
+train_X2 <- cmp_predictors[trainingRows, ]
+train_Y2 <- ChemicalManufacturingProcess$Yield[trainingRows]
+test_X2 <- cmp_predictors[-trainingRows, ]
+test_Y2 <- ChemicalManufacturingProcess$Yield[-trainingRows]
+```
+
+3. Create an elastic net regression model
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(seed)
+
+elastic_2 <- train(x=train_X2, y=train_Y2, method="enet", 
+               tuneGrid=data.frame(.lambda = seq(0,0.5,length=50), .fraction=seq(0,0.5,length=50)), 
+               preProcess=c("center", "scale"),
+               trControl=trainControl(method="cv", number=10))
+elastic_2
+```
+
+The best elastic net regression model generated is selected with the lowest RMSE value.
+
+```{r, message=FALSE, warning=FALSE}
+elastic_2$results[which(elastic_2$results$fraction==elastic_2$bestTune$fraction),]
+```
+
+### Part d
+
+**Predict the response for the test set. What is the value of the performance metric and how does this compare with the resampled performance metric on the training set?**
+
+Answer:
+
+- The resampled performance metric on the training set obtained from above has $R^2 = 0.6112501$ and $RMSE = 1.2911$.
+
+- By predicting the response for the test set, the test set estimate of $R^2 = 5955402$ and $RMSE = 1.1216353$.
+
+- The prediction performance has lower RMSE compared to the resampled performance. Thus the test set results appears to perform better than the training set results.
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(0)
+elastic_predict <- predict(elastic_2, test_X2)
+plot(elastic_predict, test_Y2, main="Observed vs Predicted Permeability of Elastic Net Regression Model",
+     xlab="Predicted Permeability", ylab="Observed Permeability")
+abline(0,1,col="royalblue")
+postResample(pred=elastic_predict, obs=test_Y2)
+```
+
+### Part e
+
+**Which predictors are most important in the model you have trained? Do either the biological or process predictors dominate the list?**
+
+Answer:
+
+- Using the `varImp` function from library `caret` to find the predictors' importance. The top 20 important predictors are shown below. 
+
+- The most important predictor is `ManufacturingProcess32`, following with `ManufacturingProcess13`, `BiologicalMaterial03`, `BiologicalMaterial06` and ``ManufacturingProcess17`, etc.
+
+- Among the 20 most important variables, there are 12 process predictors and 8 biological predictors. Also, there are 6 process predictors among top 10. Thus, process predictors appear to dominate the list.
+
+```{r, message=FALSE, warning=FALSE}
+varImp(elastic_2)$importance %>% arrange(desc(Overall))
+```
+
+
+### Part f
+
+**Explore the relationships between each of the top predictors and the response. How could this information be helpful in improving yield in future runs of the manufacturing process?**
+
+Answer:
+
+- According to the correlation plot of the top 20 important predictors, I will try to modify the manufacturing process #13, #17 and #36 to decrease their importance to the yield because they are highly negatively correlated to Yield. Their correlation coefficients with Yield are -0.50, -0.43, and -0.52 respectively.
+
+```{r, message=FALSE, warning=FALSE}
+rn <- varImp(elastic_2)$importance %>% arrange(desc(Overall)) %>% rownames() %>% .[1:20]
+
+m <- cmp_predictors %>% select(rn) %>% cbind(ChemicalManufacturingProcess$Yield)
+library(corrplot)
+corrplot(cor(m), type="lower")
+
+cor(cmp_predictors$ManufacturingProcess13, ChemicalManufacturingProcess$Yield)
+cor(cmp_predictors$ManufacturingProcess17, ChemicalManufacturingProcess$Yield)
+cor(cmp_predictors$ManufacturingProcess36, ChemicalManufacturingProcess$Yield)
+```
