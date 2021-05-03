@@ -1,0 +1,410 @@
+---
+title: "Data 624 HW9: Regression Trees and Rule-Based Models"
+author: "Sin Ying Wong"
+date: "05/02/2021"
+output:
+  rmdformats::readthedown:
+    code_folding: show
+    df_print: paged
+    highlight: tango
+    number_sections: yes
+    smooth_scroll: yes
+    theme: united
+    toc_collapsed: yes
+    toc_depth: 5
+    toc_float: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_collapsed: yes
+    toc_float: yes
+  html_notebook: default
+  pdf_document:
+    extra_dependencies:
+    - geometry
+    - multicol
+    - multirow
+  word_document:
+    toc: yes
+    toc_depth: '5'
+theme: lumen
+number_sections: yes
+toc_depth: 3
+---
+
+```{r library, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(fpp2)
+library(urca)
+library(rio)
+library(gridExtra)
+library(caret)
+library(randomForest)
+library(glmnet)
+library(mlbench)
+library(AppliedPredictiveModeling)
+library(party)
+library(gbm)
+library(Cubist)
+library(rpart)
+seed <- 200
+```
+
+# HW9: Regression Trees and Rule-Based Models
+
+Do problems 8.1, 8.2, 8.3, and 8.7 in Kuhn and Johnson.  Please submit the Rpubs link along with the .rmd file.
+
+## Ex. 8.1 
+
+**Recreate the simulated data from Exercise 7.2:**
+
+```{r, message=FALSE, warning=FALSE}
+#library(mlbench)
+set.seed(200)
+simulated <- mlbench.friedman1(200, sd = 1)
+simulated <- cbind(simulated$x, simulated$y)
+simulated <- as.data.frame(simulated)
+colnames(simulated)[ncol(simulated)] <- "y"
+```
+
+### Part a
+
+**Fit a random forest model to all of the predictors, then estimate the variable importance scores. Did the random forest model significantly use the uninformative predictors (V6 – V10)?**
+
+Answer:
+
+From the results below, the random forest model did not significantly use the uninformative predictors V6 to V10.
+
+```{r, message=FALSE, warning=FALSE}
+#library(randomForest)
+#library(caret)
+model1 <- randomForest(y ~ ., data = simulated, importance = TRUE, ntree = 1000)
+rfImp1 <- varImp(model1, scale = FALSE)
+rfImp1
+```
+
+### Part b
+
+**Now add an additional predictor that is highly correlated with one of the informative predictors. For example:**
+
+```{r, message=FALSE, warning=FALSE}
+simulated$duplicate1 <- simulated$V1 + rnorm(200) * .1
+cor(simulated$duplicate1, simulated$V1)
+```
+
+**Fit another random forest model to these data. Did the importance score for V1 change? What happens when you add another predictor that is also highly correlated with V1?**
+
+Answer:
+
+When I added another predictor `duplicate1` into the model, the importance of V1 is reduced and so as all others. The importance of V1 is reduced from 8.69 to 6.02, by 2.67, which is about 30%. This is resulted from adding the highly correlated predictor `duplicate1` to the model.
+
+```{r, message=FALSE, warning=FALSE}
+model2 <- randomForest(y ~ ., data = simulated, importance = TRUE, ntree = 1000)
+rfImp2 <- varImp(model2, scale = FALSE)
+rfImp2
+```
+
+
+### Part c
+
+**Use the `cforest` function in the `party` package to fit a random forest model using conditional inference trees. The `party` package function `varimp` can calculate predictor importance. The conditional argument of that function toggles between the traditional importance measure and the modified version described in Strobl et al. (2007). Do these importances show the same pattern as the traditional random forest model?**
+
+Answer:
+
+As given by the question, we used **conditional** inference trees in this `cforest` function.
+
+The result importances are in a different pattern as the traditional random forest model. The importance of V1 reduced to 3.25 as the correlation between predictors V1 and duplicate1 are being considered. The importance of V2 and V4 are still high while the unimportant predictors V6 to V10 are still low. 
+
+This model is better than traditional random forest model when there are highly correlated predictors.
+
+```{r, message=FALSE, warning=FALSE}
+model3 <- cforest(y ~ ., data = simulated, controls = cforest_unbiased(ntree=1000))
+rfImp3 <- varimp(model3, conditional = TRUE)
+rfImp3
+```
+
+### Part d
+
+**Repeat this process with different tree models, such as boosted trees and Cubist. Does the same pattern occur?**
+
+Answer:
+
+Similar to the models above, the boosted trees model and Cubist model also have low importance in predictors V6 to V10.
+
+Boosted Trees model (gbm) is similar to cforest model that it has V4 as the highest importance as the importance from V1 are slightly shared with the predictor duplicate1.
+
+Cubist model (cubist) is similar to the traditional random forest model that still has V1 as the top important model but also ranked 0 importance on the predictor duplicate1.
+
+```{r, message=FALSE, warning=FALSE}
+#boosted trees
+model4 <- gbm(y ~ ., data = simulated, distribution="gaussian")
+summary(model4)
+```
+
+```{r, message=FALSE, warning=FALSE}
+#cubist
+model5 <- cubist(x=simulated[, names(simulated)!="y"], y=simulated$y, committees=100)
+rfImp5 <- varImp(model5)
+rfImp5
+```
+
+
+
+
+## Ex. 8.2
+
+**Use a simulation to show tree bias with different granularities.**
+
+Answer:
+
+From the textbook, we know that trees suffer from selection bias: Predictors with a higher number of distinct values are favored over more granular predictors. Also, as the number of missing values increases, the selection of predictors becomes more biased. (Sec. 8.1 page 182)
+
+I will use `sample` function to simulate 5 variables with different granularities. 
+
+From the results below, we can see that x1 with higher number of distinct values are favored as it has the highest importance among all predictors, while X2, X3, and X4 are much less important. X5 has no distinct values except 1 so it was deemed unimportant. Thus, the result proves that tree model suffers from selection bias as it favors higher number of distinct values.
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(200)
+
+x1 <- sample(0:10000, 500, replace=TRUE)
+x2 <- sample(0:1000,  500, replace=TRUE)
+x3 <- sample(0:100,   500, replace=TRUE)
+x4 <- sample(0:10,    500, replace=TRUE)
+x5 <- sample(1,       500, replace=TRUE)
+y <- x1+x2+x3+x4+x5+rnorm(500)
+
+df <- data.frame(x1,x2,x3,x4,x5,y)
+str(df)
+
+#rpart
+tree <- rpart(y ~ ., data = df)
+varImp(tree)
+```
+
+
+## Ex. 8.3
+
+In stochastic gradient boosting the bagging fraction and learning rate will govern the construction of the trees as they are guided by the gradient. Although the optimal values of these parameters should be obtained through the tuning process, it is helpful to understand how the magnitudes of these parameters affect magnitudes of variable importance. Figure 8.24 provides the variable importance plots for boosting using two extreme values for the bagging fraction (0.1 and 0.9) and the learning rate (0.1 and 0.9) for the solubility data. The left-hand plot has both parameters set to 0.1, and the right-hand plot has both set to 0.9:
+
+![Fig. 8.24](https://github.com/shirley-wong/Data-624/blob/main/HW9/Fig.%208.24.JPG?raw=true)
+
+### Part a
+
+**Why does the model on the right focus its importance on just the first few of predictors, whereas the model on the left spreads importance across more predictors?**
+
+Answer:
+
+Boosting is a method of converting weak learners into strong learners. In boosting, each new tree is a fit on a modified version of the original data set. Gradient Boosting trains many models in a gradual, additive and sequential manner. Gradient boosting performs the identifies the shortcomings of weak learners by using gradients in the loss function (y=ax+b+error). The loss function is a measure indicating how good are model’s coefficients are at fitting the underlying data.
+
+Bagging fraction is the fraction of the training set observations randomly selected to propose the next tree in the expansion. Large bagging fraction may have the most explanatory variables involved which they may have too much importance. Small bagging fraction allows other variables to be modeled in the next step with randomness.
+
+Learning rate, also called shrinkage, is used for reducing or shrinking the impact of each additional fitted base-learner (tree). It reduces the size of incremental steps, slows down the learning, and thus penalizes the importance of each consecutive iteration. It is better to improve a model by taking many small steps than by taking fewer large steps. Small learning rate reduces overfitting.
+
+Back to the question, the model on the left has both parameters set to 0.1, which allows only 10% impact from the previous tree and allows 90% randomness of variables to be modeled in the next step. Thus more variables are being counted in each steps, and therefore in the final tree importance. The model on the right has both parameters set to 0.9, which each step focus 90% on the previous tree and uses 90% variables from the previous tree. Therefore it has most importance on only few variables.
+
+### Part b
+
+**Which model do you think would be more predictive of other samples?**
+
+Answer:
+
+A model with small bagging fraction and small learning rate allows better generalization as it considers more variables and takes small steps to learn in the process and has a lower chance of overfitting. The model on the left with both parameters set to 0.1 would be more predictive of other samples than the one with parameters set to 0.9.
+
+### Part c
+
+**How would increasing interaction depth affect the slope of predictor importance for either model in Fig. 8.24?**
+
+Answer:
+
+Increasing interaction depth, which is also called tree depth, will allow more predictors to be included in the model, which would brings more importances across more predictors. That is, similar to the model on the left. The slope of the predictor importance will therefore be more flattened (with smaller slope).
+
+## Ex. 8.7
+
+Refer to Exercises 6.3 and 7.5 which describe a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several tree-based models:
+
+(a.) Which tree-based regression model gives the optimal resampling and test set performance?
+
+(b.) Which predictors are most important in the optimal tree-based regression model? Do either the biological or process variables dominate the list? How do the top 10 important predictors compare to the top 10 predictors from the optimal linear and nonlinear models?
+
+(c.) Plot the optimal single tree with the distribution of yield in the terminal nodes. Does this view of the data provide additional knowledge about the biological or process predictors and their relationship with yield?
+
+### Data Pre-Processing
+
+The matrix `ChemicalManufacturingProcess` contains the 57 predictors (12 describing the input biological material and 45 describing the process predictors) for the 176 manufacturing runs, plus the variable `yield` which contains the percent yield for each run.
+
+A small percentage of cells in the predictor set contain missing values. Used a knn imputation function to fill in these missing values.
+
+```{r, message=FALSE, warning=FALSE}
+data(ChemicalManufacturingProcess)
+summary(ChemicalManufacturingProcess)
+
+predictors <- ChemicalManufacturingProcess[,-c(1)]
+
+#fill in missing values from textbook sec3.8 
+cmp_pre <- preProcess(predictors, method="knnImpute") 
+#apply the transformations
+cmp_predictors <- predict(cmp_pre, predictors)
+```
+
+Split the data into a training and a test set, pre-process the data, and tune models 
+
+1. Pre-process the data with centering and scaling.
+
+```{r, message=FALSE, warning=FALSE}
+cmp_pre <- preProcess(cmp_predictors, method=c("center", "scale"))
+cmp_predictors <- predict(cmp_pre, cmp_predictors)
+```
+
+2. Train-test split at 70%
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(200)
+trainingRows <- createDataPartition(ChemicalManufacturingProcess$Yield, 
+                                    p=0.70, list=FALSE) #caret, textbook sec4.9
+train_X <- cmp_predictors[trainingRows, ]
+train_Y <- ChemicalManufacturingProcess$Yield[trainingRows]
+test_X <- cmp_predictors[-trainingRows, ]
+test_Y <- ChemicalManufacturingProcess$Yield[-trainingRows]
+```
+
+### Models
+
+**Single Tree**
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(seed)
+stModel <- train(x = train_X, y = train_Y, method = "rpart",
+                  tuneLength = 10, control=rpart.control(maxdepth=2))
+stModel
+stModel$results[which(stModel$results$cp==stModel$bestTune$cp),]
+
+varImp(stModel)
+
+stPred <- predict(stModel, newdata = test_X)
+postResample(pred = stPred, obs = test_Y)
+```
+
+**Random Forest**
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(seed)
+
+rfModel <- train(x = train_X, y = train_Y, method = "rf", tuneLength = 10)
+rfModel
+rfModel$results[which(rfModel$results$mtry==rfModel$bestTune$mtry),]
+
+varImp(rfModel)
+
+rfPred <- predict(rfModel, newdata = test_X)
+postResample(pred = rfPred, obs = test_Y)
+```
+
+
+**Gradient Boosting**
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(seed)
+
+gbmGrid <- expand.grid(interaction.depth=seq(1,7,by=2),
+                       n.trees=seq(100,1000,by=50),
+                       shrinkage=c(0.01,0.1),
+                       n.minobsinnode=c(5,10))
+gbModel <- train(x = train_X, y = train_Y, method = "gbm", tuneGrid = gbmGrid, verbose=FALSE)
+gbModel
+gbModel$results[which(gbModel$results$n.trees==gbModel$bestTune$n.trees 
+                      & gbModel$results$interaction.depth==gbModel$bestTune$interaction.depth
+                      & gbModel$results$shrinkage==gbModel$bestTune$shrinkage
+                      & gbModel$results$n.minobsinnode==gbModel$bestTune$n.minobsinnode),]
+
+varImp(gbModel)
+
+gbPred <- predict(gbModel, newdata = test_X)
+postResample(pred = gbPred, obs = test_Y)
+```
+
+
+**Cubist**
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(seed)
+
+cubistModel <- train(x = train_X, y = train_Y, method = "cubist")
+cubistModel
+cubistModel$results[which(cubistModel$results$committees==cubistModel$bestTune$committees 
+                          & cubistModel$results$neighbors==cubistModel$bestTune$neighbors),]
+
+
+varImp(cubistModel)
+
+cubistPred <- predict(cubistModel, newdata = test_X)
+postResample(pred = cubistPred, obs = test_Y)
+```
+
+### Part a
+
+**Which tree-based regression model gives the optimal resampling and test set performance?**
+
+Answer:
+
+According to the result statistics, **cubist model** has the lowest RMSE and the largest $R^2$ on both resampling and test set performances. It has the best performance among the four tree-based regression models.
+
+```{r, message=FALSE, warning=FALSE}
+#single tree
+stModel$results[which(stModel$results$cp==stModel$bestTune$cp),]
+postResample(pred = stPred, obs = test_Y)
+#random forest
+rfModel$results[which(rfModel$results$mtry==rfModel$bestTune$mtry),]
+postResample(pred = rfPred, obs = test_Y)
+#gbm
+gbModel$results[which(gbModel$results$n.trees==gbModel$bestTune$n.trees 
+                      & gbModel$results$interaction.depth==gbModel$bestTune$interaction.depth
+                      & gbModel$results$shrinkage==gbModel$bestTune$shrinkage
+                      & gbModel$results$n.minobsinnode==gbModel$bestTune$n.minobsinnode),]
+postResample(pred = gbPred, obs = test_Y)
+#cubist
+cubistModel$results[which(cubistModel$results$committees==cubistModel$bestTune$committees 
+                          & cubistModel$results$neighbors==cubistModel$bestTune$neighbors),]
+postResample(pred = cubistPred, obs = test_Y)
+```
+
+### Part b
+
+**Which predictors are most important in the optimal tree-based regression model? Do either the biological or process variables dominate the list? How do the top 10 important predictors compare to the top 10 predictors from the optimal linear and nonlinear models?**
+
+Answer:
+
+By looking at the list of importance, `ManufacturingProcess17` and the `ManufacturingProcess32` are the most important predictors in the cubist model. Manufacturing process variables dominates the list by having 8 out of the top 10 variables.
+
+From HW7, the optimal linear regression model was elastic net model. The top 10 predictors are mostly ManufacturingProcess predictors, there are 6 out of the top 10 predictors.
+
+From HW8, the optimal non-linear regression model is SVM model. The top 10 predictors are mostly ManufacturingProcess predictors, there are 6 out of the top 10 predictors.
+
+The top 10 important predictors in cubist model are slightly different with the optimal linear and nonlinear models. Although all 3 are dominated by process variables, there are 8 process variables out of the top 10 variables in cubist model.
+
+The top 10 important predictors in the optimal linear and nonlinear models were ManufacturingProcess32, ManufacturingProcess13, BiologicalMaterial03, BiologicalMaterial06, ManufacturingProcess17, ManufacturingProcess09, BiologicalMaterial12, BiologicalMaterial02, ManufacturingProcess36, and ManufacturingProcess06.
+
+```{r, message=FALSE, warning=FALSE}
+varImp(cubistModel)
+```
+
+### Part c
+
+**Plot the optimal single tree with the distribution of yield in the terminal nodes. Does this view of the data provide additional knowledge about the biological or process predictors and their relationship with yield?**
+
+Answer:
+
+The final single tree model plot shows how the nodes are decided and their corresponding percentage at each level. It shows the knowledge about the biological or process predictors and their relationship with yield by showing the decision at each split. For example, the higher the value of `ManufacturingProcess32`, the higher the yield.
+
+0. It starts at 40 with percentage 100%.
+
+1. The first split happens at `ManufacturingProcess32` < 0.19. If it is less than 0.19, the yield at this node will be 39 with chance of 56% in total. If it is greater than or equal to 0.19, the yield at this node will be 41 with chance of 44% in total.
+
+2. If `ManufacturingProcess32` < 0.19, the second split happens at `BiologicalMaterial12` < -0.18. If it's a Yes, the yield becomes 39 with chance of 33% in total. If it's a No, the yield becomes 40 with chance of 23% in total. These two percentage comes from the previous node of 56%.
+
+3. If `ManufacturingProcess32` >= 0.19, the second split happens at `ManufacturingProcess31` >= 0.14. If it's a Yes, the yield becomes 41 with chance of 15% in total. If it's a No, the yield becomes 42 with chance of 28% in total. These two percentage comes from the previous node of 44%.
+
+```{r, message=FALSE, warning=FALSE}
+stModel$finalModel
+rpart.plot::rpart.plot(stModel$finalModel)
+```
+
