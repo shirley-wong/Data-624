@@ -1,0 +1,494 @@
+---
+title: "DATA 624 - PROJECT 2"
+author: "Mengqin Cai, Fan Xu, Sin Ying Wong"
+date: "5/20/2021"
+output:
+  rmdformats::readthedown:
+    code_folding: hide
+    df_print: paged
+    highlight: tango
+    number_sections: yes
+    smooth_scroll: yes
+    theme: united
+    toc_collapsed: yes
+    toc_depth: 5
+    toc_float: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_collapsed: yes
+    toc_float: yes
+  html_notebook: default
+  pdf_document:
+    extra_dependencies:
+    - geometry
+    - multicol
+    - multirow
+  word_document:
+    toc: yes
+    toc_depth: '5'
+theme: lumen
+number_sections: yes
+toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+This is role playing.  I am your new boss.  I am in charge of production at ABC Beverage and you are a team of data scientists reporting to me.  My leadership has told me that new regulations are requiring us to understand our manufacturing process, the predictive factors and be able to report to them our predictive model of PH.
+
+Please use the historical data set I am providing.  Build and report the factors in BOTH a technical and non-technical report.  I like to use Word and Excel.  Please provide your non-technical report in a  business friendly readable document and your predictions in an Excel readable format.   The technical report should show clearly the models you tested and how you selected your final approach.
+
+Please submit both Rpubs links and .rmd files or other readable formats for technical and non-technical reports.  Also submit the excel file showing the prediction of your models for pH.
+
+
+# Load Package
+The following R package are used in this project.
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(rio)
+library(skimr)
+library(corrplot)
+library(VIM)
+library(Amelia)
+library(caret)
+library(recipes)
+library(rsample)
+
+```
+
+# Load Data
+Two data sets are downloaded from Github
+
+  - Training Data: `StudentData.xlsx`
+  - Evaluation Data: `StudentEvaluation.xlsx`
+
+```{r import data, warning=FALSE}
+df<-rio::import('https://raw.githubusercontent.com/oggyluky11/DATA624-SPRING-2021/main/PROJECT_2/StudentData.xlsx')
+df_eval <-rio::import('https://raw.githubusercontent.com/oggyluky11/DATA624-SPRING-2021/main/PROJECT_2/StudentEvaluation.xlsx')
+df<-data.frame(df)
+df_eval<-data.frame(df_eval)
+head(df)
+```
+
+
+# Exploratory data analysis
+
+  According to the data summary below,
+  
+  - The responsible variable `[PH]` is continuous, therefore regression model is expected to be built.
+  - There are total 31 numerical predictors and 1 categorical predictor in the data set.
+  - According to the missing value view, only 1% of the data are missing, the predictor that contains most missing value is [MFR], this missing ratio is 212/2571 = 8.25%. Therefore no predictor is suggested to be removed, imputation is to be included in the later data preprocess.
+  - There are 4 rows in the training set which `[PH]` is missing, as imputing responsible variable is not meaningful in training set, therefore these 4 rows are suggested to be removed.
+  - The majority of the continuous numerical predictors in both training set and evaluation set demonstrated skewed distribution, also some of the predictors contain negative values, therefore `Yeo-Johnson` transformation is used to remove the skewness.
+  - A dummy variable will be created for categorical predictor `[Brand.Code]`.
+  - The pairwise correlation of predictors `[Balling]`,`[Hyd.Pressure3]`, `[Density]`, `[Balling.Lvl]` and `[Filler.Level]`, after missing value imputation, are greater than 0.9, therefore, they are suggested to be removed to avoid multicollinearity.
+
+## Training Data Summary
+```{r training set summary, warning=FALSE}
+skim(df)
+```
+
+
+## Evaluation Data Summary
+```{r test set summary, warning=FALSE}
+skim(df_eval)
+```
+
+## Missing Value View
+
+A plot of missing value distribution in the data set.
+```{r missing value}
+missmap(df)
+
+```
+
+
+## Numerical Predictor Correlation after Missing Data Imputation
+
+  - Using KNN to impute missing values of the training data set
+  - compute pair-wise correlations and locate the predictors with pair-wire correlation greate than 0.9
+```{r find high correlation}
+findCorrelation(df %>% 
+                  kNN() %>% 
+                  select(!ends_with('imp'), -c(Brand.Code, PH)) %>% 
+                  cor(),
+                cutoff = 0.9,
+                names = TRUE,
+                verbose = TRUE)
+```
+
+
+
+# Data Preprocess
+
+For `training` set:
+  
+  - Remove rows where PH is empty/NA.
+  - perform train-test-split, ratio 4/5.
+  
+For both `training` and `evaluation` set:
+
+  - Impute missing values using bag trees
+  - create dummy variable for categorical variables
+  - center and scale numerical variables
+  - remove skewness of numerical variables
+  - remove predictors with near zero variance
+  - remove predictors with correlation greater than 0.9
+
+Note: Data preprocess can be performed during model training, however, as there are multiple models to be built in the later section, preprocessing data in advanced is more efficient than doing it during each model run.
+
+```{r data preprocess}
+set.seed(0)
+
+# -- remove is.na(PH)
+df <- df %>% 
+  filter(!is.na(PH))
+
+# -- data preprocess
+data_prepProc <- recipe(PH ~ .,  df) %>%
+  #Impute missing value
+  step_bagimpute(all_predictors()) %>%
+  # create dummy variable for categorical variables
+  step_dummy(all_nominal(), -all_outcomes()) %>% 
+  # center and scale
+  step_normalize(all_numeric(), -all_outcomes()) %>%
+  # remove skewness
+  step_YeoJohnson(all_nominal(), -all_outcomes()) %>%
+  # remove near zero variance predictors
+  step_nzv(all_nominal(), -all_outcomes()) %>%
+  # remove predictors with correlation > 0.9
+  step_corr(all_numeric(), -all_outcomes()) %>% 
+  prep()
+
+df_mod <- data_prepProc %>%
+  bake(df)
+
+df_eval_mod <- data_prepProc %>%
+  bake(df_eval)
+
+# train-test-split
+df_split <- df_mod %>% initial_split(prop = 4/5)
+
+# Training set
+data_train_X <- training(df_split) %>% select(-PH) 
+data_train_Y <- training(df_split) %>% .$PH
+
+# Testing set
+data_test_X <- testing(df_split) %>% select(-PH)
+data_test_Y <- testing(df_split) %>% .$PH
+
+# Evaluation Set
+data_eval_X <- df_eval_mod %>% select(-PH) 
+
+skim(df_mod)
+```
+
+
+
+# Model building
+
+Three categories of regression models are to be built in this section, including `Linear Regression Models`, `Non-linear Regression Models` and `Tree-based Models`. The model with best performance in the test data set will be selected as the final model.
+
+The models to be built are as below:
+
+  - Linear Regression Models: `PLS`, `Ridge`, `LASSO` and `Elastic Net`
+  - Non-linear Regression Models: `KNN`, `SVM-Linear`, `SVM-Radial`, `MARS` and `Neural Network`
+  - Tree-based Regression Models: `Random Forest`, `Gradient Boosting Machine` and `Cubist`
+  
+
+## Linear Regression Models
+
+
+### PLS Regression
+
+1. 7th latent variables are optimal;
+
+2. The corresponding resampled estimate of RMSE and R2 are 0.1362656 and 0.3739715 respectively.
+```{r PLS, warning=FALSE}
+set.seed(0)
+ctrl <- trainControl(method = "cv", number = 10)
+Linear_PLS <- train(data_train_X, data_train_Y,
+                 method = 'pls',
+                 tuneLength = 20,
+                 trControl = ctrl)
+Linear_PLS 
+Linear_PLS_pred <- predict(Linear_PLS, data_train_X)
+Linear_PLS_metrics <- postResample(Linear_PLS_pred, data_train_Y)
+Linear_PLS_metrics
+```
+
+
+### Ridge Regression
+
+1. lambda = 0.03157895 is optimal;
+
+2. The corresponding resampled estimate of RMSE and R2 are 0.1299868 and 0.4415918 respectively.
+```{r ridge, warning=FALSE}
+set.seed(0)
+ctrl <- trainControl(method = "cv", number = 10)
+ridgeGrid <- data.frame(.lambda = seq(0, .2, length = 20))
+Linear_Ridge <- train(data_train_X, data_train_Y,
+                   method = 'ridge',
+                   tuneGrid = ridgeGrid,
+                   trControl = ctrl)
+
+Linear_Ridge
+Linear_Ridge_Pred <- predict(Linear_Ridge, newdata = data_test_X)
+Linear_Ridge_metrics <- postResample(pred = Linear_Ridge_Pred, obs = data_test_Y)
+Linear_Ridge_metrics
+```
+
+
+### LASSO
+
+1. The Optimal fraction is 0.1,  
+
+2. The corresponding resampled estimate of RMSE and R2 are 0.1561285 and 0.2961838 respectively.
+```{r LASSO lasso, warning=FALSE}
+set.seed(0)
+lassoGrid <- data.frame(.fraction = seq(0.01, .1, length = 20))
+Linear_LASSO <- train(data_train_X, data_train_Y,
+                   method = 'lasso',
+                   tuneGrid = lassoGrid,
+                   trControl = ctrl)
+
+Linear_LASSO
+Linear_LASSO_Pred <- predict(Linear_LASSO, newdata = data_test_X)
+Linear_LASSO_metrics <- postResample(pred = Linear_LASSO_Pred, obs = data_test_Y)
+Linear_LASSO_metrics
+```
+
+
+### Elastic Net
+
+1. The optimal fraction = 0.1 and lambda = 0.2, 
+
+2. The corresponding resampled estimate of RMSE and R2 are 0.1589297 and 0.2697740 respectively.
+```{r elastic net, warning=FALSE}
+set.seed(0)
+enetGrid <- data.frame(.lambda = seq(0, .2, length = 20),
+                       .fraction = seq(0.01, .1, length = 20))
+Linear_eNet <- train(data_train_X, data_train_Y,
+                   method = 'enet',
+                   tuneGrid = enetGrid,
+                   trControl = ctrl)
+
+Linear_eNet
+Linear_eNet_Pred <- predict(Linear_eNet, newdata = data_test_X)
+Linear_eNet_metrics <- postResample(pred = Linear_eNet_Pred, obs = data_test_Y)
+Linear_eNet_metrics
+```
+
+## Non-Linear Regression Models
+
+### KNN
+1. The optimal k is 7;
+
+2. The corresponding resampled estimate of RMSE and R2 are 0.10585060 and 0.62857413 respectively.
+```{r KNN, warning=FALSE}
+set.seed(0)
+NonLinear_KNN <- train(data_train_X, data_train_Y,
+                 method = 'knn',
+                 tuneLength = 10,
+                 trControl = ctrl)
+NonLinear_KNN
+NonLinear_KNN_pred <- predict(NonLinear_KNN, data_train_X)
+NonLinear_KNN_metrics <- postResample(NonLinear_KNN_pred, data_train_Y)
+NonLinear_KNN_metrics
+```
+
+
+### SVM-Linear
+1. The optimal epsilon = 0.1 and cost C = 1;
+
+2. The corresponding resampled estimate of RMSE and R2 are 0.1381481 and 0.3615830 respectively.
+```{r SVM-Linear, warning=FALSE}
+set.seed(0)
+NonLinear_SVMLinear <- train(data_train_X, data_train_Y,
+                 method = 'svmLinear',
+                 tuneLength = 15,
+                 trControl = ctrl)
+NonLinear_SVMLinear
+NonLinear_SVMLinear$finalModel
+NonLinear_SVMLinear_pred <- predict(NonLinear_SVMLinear, data_train_X)
+NonLinear_SVMLinear_metrics <- postResample(NonLinear_SVMLinear_pred, data_train_Y)
+NonLinear_SVMLinear_metrics
+```
+
+
+
+### SVM-Radial
+1. The optimal sigma = 0.0242724 and C = 4;
+
+2. The corresponding resampled estimate of RMSE and R2 are 0.08011998 and 0.79263724 respectively.
+```{r SVM-Radial, warning=FALSE}
+set.seed(0)
+NonLinear_SVMRadial <- train(data_train_X, data_train_Y,
+                 method = 'svmRadial',
+                 tuneLength = 15,
+                 trControl = ctrl)
+NonLinear_SVMRadial
+NonLinear_SVMRadial$finalModel
+NonLinear_SVMRadial_pred <- predict(NonLinear_SVMRadial, data_train_X)
+NonLinear_SVMRadial_metrics <- postResample(NonLinear_SVMRadial_pred, data_train_Y)
+NonLinear_SVMRadial_metrics
+```
+
+
+
+### MARS
+1. The optimal nprune = 23 and degree = 2.
+
+2. The corresponding resampled estimate of RMSE and R2 are 0.12396741 and 0.49036903 respectively.
+
+```{r MARS, warning=FALSE}
+set.seed(0)
+NonLinear_MARS <- train(data_train_X, data_train_Y,
+                 method ='earth',
+                 tuneGrid = expand.grid(.degree = 1:2, 
+                                        .nprune = 2:38),
+                 trControl = ctrl)
+
+NonLinear_MARS
+NonLinear_MARS$finalModel
+NonLinear_MARS_Pred <- predict(NonLinear_MARS, newdata = data_test_X)
+NonLinear_MARS_metrics <- postResample(pred = NonLinear_MARS_Pred, obs = data_test_Y)
+NonLinear_MARS_metrics
+```
+
+
+
+
+### Neural Network
+The final neural network model is size = 5, decay = 0.01, with RMSE and R2 0.11423783 and R2 0.56938536 respectively.
+```{r NN, warning=FALSE}
+set.seed(0)
+
+
+NonLinear_NNet <- train(data_train_X, data_train_Y,
+                      method ='avNNet',
+                      tuneGrid = expand.grid(.decay = seq(0.01,0.1,0.02), 
+                                             .size = c(1:5),
+                                             .bag = FALSE),
+                      trControl = trainControl(method = "cv"),
+                      trace = FALSE,
+                      linout =TRUE#,
+                      #MaxNWts = 10 * (ncol(trainingData$x) + 1) + 10 + 1,
+                      #maxit = 500
+                      )
+NonLinear_NNet
+NonLinear_NNet_Pred <- predict(NonLinear_NNet, newdata = data_test_X)
+NonLinear_NNet_metrics <- postResample(pred = NonLinear_NNet_Pred, obs = data_test_Y)
+NonLinear_NNet_metrics
+```
+
+
+## Tree-Based Regression Models
+
+### Random Forest
+1. The optimal mtry = 15.
+
+2. The corresplonding resampled estimate of RMSE and R2 are 0.09784328 and 0.69226170 respectively.
+
+```{r rf, warning=FALSE}
+set.seed(0)
+
+TreeBased_RF <- train(x = data_train_X,
+                  y = data_train_Y,
+                  method = "rf",
+                  trControl = ctrl)
+TreeBased_RF
+TreeBased_RF_Pred <- predict(TreeBased_RF, newdata = data_test_X)
+TreeBased_RF_metrics <- postResample(pred = TreeBased_RF_Pred, obs = data_test_Y)
+TreeBased_RF_metrics
+```
+
+### Gradient Boosting Machine
+1. The optimal n.trees = 900, interaction.depth = 5, shrinkage = 0.1 and n.minobsinnode = 10.
+
+2. The corresplonding resampled estimate of RMSE and R2 are 0.1104675 and 0.5972602 respectively.
+
+```{r gbm, warning=FALSE}
+set.seed(0)
+
+TreeBased_GBM <- train(x = data_train_X,
+                  y = data_train_Y,
+                  method = "gbm",
+                  tuneGrid = expand.grid(.interaction.depth = seq(1, 7, by = 2),
+                              .n.trees = seq(100, 1000, by = 50),
+                              .shrinkage = c(0.01, 0.1),
+                              .n.minobsinnode = c(5,10)),
+                  tuneLength = 10,
+                  trControl = ctrl,
+                  verbose = FALSE)
+TreeBased_GBM
+TreeBased_GBM_Pred <- predict(TreeBased_GBM, newdata = data_test_X)
+TreeBased_GBM_metrics <- postResample(pred = TreeBased_GBM_Pred, obs = data_test_Y)
+TreeBased_GBM_metrics
+```
+
+
+
+
+
+### Cubist
+
+1. The optimal committees = 20 and neighbors = 5.
+
+2. The corresplonding resampled estimate of RMSE and R2 are 0.09987318 and 0.67114775 respectively.
+```{r cubist, warning=FALSE}
+set.seed(0)
+
+TreeBased_Cubist <- train(x = data_train_X,
+                  y = data_train_Y,
+                  method = "cubist",
+                  trControl = trainControl(method = 'cv'))
+TreeBased_Cubist
+TreeBased_Cubist_Pred <- predict(TreeBased_Cubist, newdata = data_test_X)
+TreeBased_Cubist_metrics <- postResample(pred = TreeBased_Cubist_Pred, obs = data_test_Y)
+TreeBased_Cubist_metrics
+```
+
+
+# Model Selection
+
+The SVM-Radial model has both lowest RMSE and highest R2, therefore it is selected to be the best model.
+
+```{r comparison}
+rbind(Linear_PLS_metrics,
+      Linear_Ridge_metrics,
+      Linear_LASSO_metrics,
+      Linear_eNet_metrics,
+      NonLinear_KNN_metrics,
+      NonLinear_SVMLinear_metrics,
+      NonLinear_SVMRadial_metrics,
+      NonLinear_MARS_metrics,
+      NonLinear_NNet_metrics,
+      TreeBased_RF_metrics,
+      TreeBased_GBM_metrics,
+      TreeBased_Cubist_metrics
+      ) %>%
+  data.frame() %>%
+  arrange(RMSE)
+
+```
+
+
+
+# Prediction on Evaluation Data
+```{r prediction}
+PH_Pred <- predict(NonLinear_SVMRadial, newdata = data_eval_X)
+
+df_pred <- cbind(df_eval %>% select(-PH), PH_Pred) 
+```
+
+
+# Export Prediction as CSV
+```{R save prediction, eval=FALSE}
+write_csv(df_pred, 'D://DATA SCIENCE//DATA 624 SPRING 2021//Project 2//StudentEvaluation_Prediction.csv')
+
+```
